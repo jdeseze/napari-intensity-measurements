@@ -23,7 +23,9 @@ from skimage.io import imread
 from skimage.io.collection import alphanumeric_key
 from dask import delayed
 import dask.array as da
-import dask_image
+#import dask_image
+import numpy as np
+import exifread
 
 def read_stack(filenames):
     sample = imread(filenames[0])
@@ -39,147 +41,445 @@ def read_stack(filenames):
     stack.shape  # (nfiles, nz, ny, nx)
     return stack
 
-filenames = sorted(glob(r"F:\optorhoa\201208_RPE_optoRhoA_PAKiRFP\cell2s_50msact_1_w2TIRF 561_t*.tif"),key=alphanumeric_key)
+filenames = sorted(glob(r"D:\optorhoa\201208_RPE_optoRhoA_PAKiRFP\cell2s_50msact_1_w2TIRF 561_t*.tif"),key=alphanumeric_key)
 stack=read_stack(filenames)
 viewer=napari.view_image(stack, contrast_limits=[0,2000],name='561')  
 viewer.layers[-1].reset_contrast_limits()
 
-filenames = sorted(glob(r"F:\optorhoa\201208_RPE_optoRhoA_PAKiRFP\cell2s_50msact_1_w3TIRF 642_t*.tif"),key=alphanumeric_key)
+filenames = sorted(glob(r"D:\optorhoa\201208_RPE_optoRhoA_PAKiRFP\cell2s_50msact_1_w3TIRF 642_t*.tif"),key=alphanumeric_key)
 stack=read_stack(filenames)
 viewer.add_image(stack, contrast_limits=[0,2000],name='642')  
 viewer.layers[-1].reset_contrast_limits()
 
-filenames = sorted(glob(r"F:\optorhoa\201208_RPE_optoRhoA_PAKiRFP\cell2s_50msact_1_w1TIRF DIC_t*.tif"),key=alphanumeric_key)
+filenames = sorted(glob(r"D:\optorhoa\201208_RPE_optoRhoA_PAKiRFP\cell2s_50msact_1_w1TIRF DIC_t*.tif"),key=alphanumeric_key)
 stack=read_stack(filenames)
 viewer.add_image(stack, contrast_limits=[199,200],name='DIC')  
 viewer.layers[-1].reset_contrast_limits()
 
 viewer.reset_view()
 viewer.grid.enabled=True
-#%%
+#%% STACKVIEWER
 from qtpy.QtWidgets import QPushButton,QLabel,QComboBox,QFileDialog,QWidget,QMessageBox,QMainWindow,QVBoxLayout
-from common_functions import *
+from PIL import Image
+
 import os
 
-class StackViewer(QWidget):
-    def __init__(self,viewer):
-        super().__init__()
-        
-        self.viewer=viewer
-        self.exp=None
-        
-        #set the vertical layout
-        self.setLayout(QVBoxLayout())
-        
-        #add the 'Select Folder' button
-        btn = QPushButton(self)
-        btn.setText('Select Folder')
-        self.layout().addWidget(btn)
-        btn.clicked.connect(self.choose_exp)
-        
-        #add the dropdown list to select the experiment
-        self.list_exp=QComboBox(self)
-        self.layout().addWidget(self.list_exp)
-        self.list_exp.currentTextChanged.connect(self.get_exp)
-        
-        #add the dropdown button to select the cell 
-        self.cell_nb=QComboBox(self.list_exp)
-        self.layout().addWidget(self.cell_nb)
-        self.cell_nb.currentTextChanged.connect(self.display_exp)
-        
-    #function to choose the directory and have the experiments in the folder displayed
-    def choose_exp(self):
-        dbox = QFileDialog(self)
-        dbox.setDirectory('F:/optorhoa')   
-        dbox.setFileMode(QFileDialog.Directory)          
-        if dbox.exec_():
-            self.folder = dbox.selectedFiles()
-        for folder_path in self.folder:
-             filenames=[f for f in os.listdir(folder_path) if f.endswith('.nd')]  
-        self.list_exp.clear()
-        self.list_exp.addItems(filenames)
-        
-    def get_exp(self):
-        try:
-            self.exp=get_exp(os.path.join(self.folder[0],self.list_exp.currentText()))
-        except:
-            mess=QMessageBox(self)
-            mess.setText('Unable to load experiment')
-            self.layout().addWidget(mess)
-        self.cell_nb.clear()
-        if self.exp:
-            self.cell_nb.addItems(list(map(str,range(1,self.exp.nbpos+1))))
-            print(self.cell_nb)
+class WL:
+    def __init__(self,name,step=1):
+        self.name=name
+        self.step=step
+
+class Exp:
+
+    def __init__(self,expname,wl=[],nbpos=1,nbtime=1,comments=[]):
+        self.name=expname
+        self.nbpos=nbpos
+        self.nbtime=nbtime
+        self.wl=wl
+        self.nbwl=len(wl)
+        self.commments=comments
+        if self.nbtime==1:
+            self.timestep=0
         else:
-            print('no experiment was found')
-        
-    def display_exp(self):
-# =============================================================================
-#         mess=QLabel(self)
-#         mess.setText(str(is_exp))
-#         self.layout().addWidget(mess)
-# =============================================================================
-        self.viewer.layers.clear()
-        
-        #separate openings if it is only as a stack or not
-        try:
-            pos=int(self.cell_nb.currentText())
-        except:
-            pos=1
-        #print(self.exp.nbpos)    
-        for i in range(len(self.exp.wl)):
-            if self.exp.stacks:
-                filename=self.exp.get_stack_name(i,pos)
-                #print(filename)
-                lazy_imread = delayed(imread)
-                self.viewer.add_image(imread(filename),name=self.exp.wl[i].name)
-# =============================================================================
-#                 stack=read_stack(filename)
-#                 self.viewer.add_image(stack,contrast_limits=[0,2000],name=self.exp.wl[i].name)
-#                 self.viewer.layers[-1].reset_contrast_limits()
-# =============================================================================
+            maxwl_ind=min(list(range(self.nbwl)), key=lambda ind:self.wl[ind].step)
+            try:
+                open(self.get_image_name(maxwl_ind,timepoint=1), 'rb')
+                self.stacks=False
+            except:
+                self.stacks=True
+            if self.stacks:
+                #print(self.get_stack_name(maxwl_ind))
+                self.timestep=10
             else:
-                filenames=sorted(glob(self.exp.get_image_name(i,pos,'*')),key=alphanumeric_key)
-                stack=read_stack(filenames)
-                self.viewer.add_image(stack,contrast_limits=[0,2000],name=self.exp.wl[i].name)
-                #set contrast limits automatically
-                self.viewer.layers[-1].reset_contrast_limits()
+                with open(self.get_image_name(maxwl_ind,timepoint=1), 'rb') as opened:
+                    tags = exifread.process_file(opened)
+                    time_str=tags['Image DateTime'].values
+                    h, m, s = time_str.split(' ')[1].split(':')
+                    time1=int(h) * 3600 + int(m) * 60 + float(s)
+                with open(self.get_image_name(maxwl_ind,timepoint=int((nbtime-1)/self.wl[maxwl_ind].step+1)), 'rb') as opened:
+                    tags = exifread.process_file(opened)
+                    time_str=tags['Image DateTime'].values
+                    h, m, s = time_str.split(' ')[1].split(':')
+                    time2=int(h) * 3600 + int(m) * 60 + float(s)
+                    self.timestep=(time2-time1)/self.nbtime
+    
+    #use this if the stack was not build 
+    def get_image_name(self,wl_ind,pos=1,timepoint=1,sub_folder=''):
+        if self.nbtime==1:
+            tpstring=''
+        else:
+            tpstring='_t'+str(timepoint)
+        if self.nbpos==1:
+            posstring=''
+        else:
+            posstring='_s'+str(pos)
+        return '\\'.join(self.name.split('/')[0:-1]+[self.name.split('/')[-1]])+'_w'+str(wl_ind+1)+self.wl[wl_ind].name+posstring+tpstring+'.tif'    
+        #return self.name+'_w'+str(wl_ind+1)+self.wl[wl_ind].name+posstring+tpstring+'.tif'
+   
+    #use this if there is only the stack, in the "Stacks" folder
+    def get_stack_name(self,wl_ind,pos=1,sub_folder='Stacks'):
+        if self.nbpos==1:
+            return '\\'.join(self.name.split('\\')[0:-1]+[sub_folder]+[self.name.split('\\')[-1]])+'_w'+str(wl_ind+1)+self.wl[wl_ind].name+'.tif'
+        else:
+            posstring='_s'+str(pos)
+            return '\\'.join(self.name.split('\\')[0:-1]+[sub_folder]+[self.name.split('\\')[-1]])+'_w'+str(wl_ind+1)+self.wl[wl_ind].name+posstring+'.tif'
+    
+    def get_first_image(self,wl_ind,pos=1,timepoint=''):
+        timepoint=1
+        if self.stacks:
+            I=Image.open(self.get_stack_name(wl_ind,pos))
+            I.seek(timepoint)
+            return I
+        else:
+            return Image.open(self.get_image_name(wl_ind,pos,timepoint))
+    
+    def get_last_image(self,wl_ind,pos=1,timepoint=1):
+        last_ind=int(self.nbtime/self.wl[wl_ind].step-1)*self.wl[wl_ind].step+1
+        if self.stacks:
+            I=Image.open(self.get_stack_name(wl_ind,pos))
+            I.seek(timepoint)
+            return I
+        else:        
+            return Image.open(self.get_image_name(wl_ind,pos,last_ind))
+    
+    def get_sizeimg(self):
+        return self.get_first_image(0).size
+    
+    def disp_message(self):
+        return self.get_stack_name(0)
+
+
+def get_exp(filename):
+    nb_pos=1
+    nb_wl=1
+    with open(filename,'r') as file:
+        i=0
+        line=file.readline()
+        comments=[]
+        iscomments=False
+        while not line.rstrip().split(', ')[0]=='"NTimePoints"' and i<50:
+            if line.rstrip().split(', ')[0]=='"StartTime1"':
+                iscomments=False
+            if iscomments:
+                comments.append(line.rstrip())
+            if line.rstrip().split(', ')[0]=='"Description"':
+                iscomments=True
+                comments.append(str(line.rstrip().split(', ')[1]))
+            line=file.readline()
+            i+=1
+            
+        #get number of timepoints
+        nb_tp=int(line.rstrip().split(', ')[1])
+        line=file.readline()
         
-        self.viewer.reset_view()
-        self.viewer.grid.enabled=True
-        #for i in range(len(exp.wl)):
+        #get positions if exist
+        if line.split(', ')[1].rstrip('\n')=='TRUE':
+            line=file.readline()
+            nb_pos=int(line.split(', ')[1].rstrip('\n'))
+            for i in range(nb_pos):
+                file.readline()            
+        file.readline()
+        
+        #get number of wavelengths
+        line=file.readline()
+        nb_wl=int(line.rstrip().split(', ')[1])
+    
+        #create all new wavelengths
+        wl=[]
+        for i in range (nb_wl):
+            line=file.readline()
+            wl.append(WL(line.rstrip().split(', ')[1].strip('\"')))
+            file.readline()
+    
+        #change the time steps
+        line=file.readline()
+        while line.split(', ')[0].strip('\"')=='WavePointsCollected':
+            sep=line.rstrip().split(', ')
+            if len(sep)>3:
+                wl[int(sep[1])-1].step=int(sep[3])-int(sep[2])
+            line=file.readline()
+        
+        expname=filename.rstrip('d').rstrip('n').rstrip('.')
+        
+        print(str(nb_pos))
+        
+        return Exp(expname,wl,nb_pos,nb_tp,comments)
 
-import time
-import warnings
-from qtpy.QtWidgets import QSpacerItem, QSizePolicy
-from napari_plugin_engine import napari_hook_implementation
-from qtpy.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QPushButton, QLabel, QSpinBox, QCheckBox
-from qtpy.QtWidgets import QTableWidget, QTableWidgetItem, QWidget, QGridLayout, QPushButton, QFileDialog
-from qtpy.QtCore import Qt
-from magicgui.widgets import Table
-from napari._qt.qthreading import thread_worker
-from qtpy.QtCore import QTimer
+# =============================================================================
+# class StackViewer(QWidget):
+#     def __init__(self,viewer):
+#         super().__init__()
+#         
+#         self.viewer=viewer
+#         self.exp=None
+#         
+#         #set the vertical layout
+#         self.setLayout(QVBoxLayout())
+#         
+#         #add the 'Select Folder' button
+#         btn = QPushButton(self)
+#         btn.setText('Select Folder')
+#         self.layout().addWidget(btn)
+#         btn.clicked.connect(self.choose_exp)
+#         
+#         #add the dropdown list to select the experiment
+#         self.list_exp=QComboBox(self)
+#         self.layout().addWidget(self.list_exp)
+#         self.list_exp.currentTextChanged.connect(self.get_exp)
+#         
+#         #add the dropdown button to select the cell 
+#         self.cell_nb=QComboBox(self.list_exp)
+#         self.layout().addWidget(self.cell_nb)
+#         self.cell_nb.currentTextChanged.connect(self.display_exp)
+#         
+#     #function to choose the directory and have the experiments in the folder displayed
+#     def choose_exp(self):
+#         dbox = QFileDialog(self)
+#         dbox.setDirectory('F:/optorhoa')   
+#         dbox.setFileMode(QFileDialog.Directory)          
+#         if dbox.exec_():
+#             self.folder = dbox.selectedFiles()
+#         for folder_path in self.folder:
+#              filenames=[f for f in os.listdir(folder_path) if f.endswith('.nd')]  
+#         self.list_exp.clear()
+#         self.list_exp.addItems(filenames)
+#         
+#     def get_exp(self):
+#         try:
+#             print(self.folder[0])
+#             self.exp=get_exp(os.path.join(self.folder[0],self.list_exp.currentText()))
+#         except:
+#             mess=QMessageBox(self)
+#             mess.setText('Unable to load experiment')
+#             self.layout().addWidget(mess)
+#         self.cell_nb.clear()
+#         if self.exp:
+#             self.cell_nb.addItems(list(map(str,range(1,self.exp.nbpos+1))))
+#             print(self.cell_nb)
+#         else:
+#             print('no experiment was found')
+#         
+#     def display_exp(self):
+# # =============================================================================
+# #         mess=QLabel(self)
+# #         mess.setText(str(is_exp))
+# #         self.layout().addWidget(mess)
+# # =============================================================================
+#         self.viewer.layers.clear()
+#         
+#         #separate openings if it is only as a stack or not
+#         try:
+#             pos=int(self.cell_nb.currentText())
+#         except:
+#             pos=1
+#         #print(self.exp.nbpos)    
+#         for i in range(len(self.exp.wl)):
+#             if self.exp.stacks:
+#                 filename=self.exp.get_stack_name(i,pos)
+#                 #print(filename)
+#                 lazy_imread = delayed(imread)
+#                 self.viewer.add_image(imread(filename),name=self.exp.wl[i].name)
+# # =============================================================================
+# #                 stack=read_stack(filename)
+# #                 self.viewer.add_image(stack,contrast_limits=[0,2000],name=self.exp.wl[i].name)
+# #                 self.viewer.layers[-1].reset_contrast_limits()
+# # =============================================================================
+#             else:
+#                 filenames=sorted(glob(self.exp.get_image_name(i,pos,'*')),key=alphanumeric_key)
+#                 stack=read_stack(filenames)
+#                 self.viewer.add_image(stack,contrast_limits=[0,2000],name=self.exp.wl[i].name)
+#                 #set contrast limits automatically
+#                 self.viewer.layers[-1].reset_contrast_limits()
+#         
+#         self.viewer.reset_view()
+#         self.viewer.grid.enabled=True
+#         #for i in range(len(exp.wl)):
+# 
+# if __name__ == "__main__":
+#     w = StackViewer(viewer)
+#     
+#     #.resize(300,300)
+#     #w.setWindowTitle(‘Guru99’)
+#     
+#     w.show()
+#     viewer.window.add_dock_widget(w)
+# =============================================================================
+    
+            
+#%%
+
 from magicgui import magicgui
-import pyqtgraph as pg
-import numpy as np
-import napari
+import os
+import pathlib
+from skimage.io import imread
+from skimage.io.collection import alphanumeric_key
+from dask import delayed
+from magicgui import widgets
+
+@magicgui(foldername={"mode": "d"},
+          call_button='Load experiment',
+          )
+def folder_picker(foldername=pathlib.Path(r"F:/optorhoa")):
+    
+    print('Experiment loaded')
+# =============================================================================
+#     filepath=os.path.join(folder_picker.foldername.value,folder_picker.filename.value)
+#     try:
+#         exp=get_exp(filepath)
+#     except:
+#         print('unable to load experiment')
+#     if expnumber==-1:
+#         print('choose a valid experiment number')
+#     elif exp:
+#         #print("experiment loaded :"+str(filepath))
+#         viewer.layers.clear()
+#         for i in range(len(exp.wl)):
+#             if exp.stacks:
+#                 stackname=exp.get_stack_name(i,expnumber)
+#                 viewer.add_image(imread(stackname),name=exp.wl[i].name)
+#             else:
+#                 files=sorted(glob(exp.get_image_name(i,expnumber,'*')),key=alphanumeric_key)
+#                 #print(files)
+#                 stack=read_stack(files)
+#                 viewer.add_image(stack,contrast_limits=[0,2000],name=exp.wl[i].name)
+#                 #set contrast limits automatically
+#                 viewer.layers[-1].reset_contrast_limits()    
+#         viewer.reset_view()
+#         viewer.grid.enabled=True    
+#     else:
+#         print('errooor')
+# =============================================================================
+
+#when the folder name changes, we need to change the list of possible files
+@folder_picker.foldername.changed.connect
+def foldername_callback(new_foldername: pathlib.Path):
+    print('new folder is : '+str(new_foldername))
+    new_filenames=['']+[f for f in os.listdir(new_foldername) if f.endswith('.nd')]
+    folder_picker.filename.choices=new_filenames
+    
+    #folder_picker.show()
+
+#when the filename changes, we need to change the experiment numbers
+@folder_picker.filename.changed.connect
+def filename_callback(new_filename: str):
+    print('new filename : '+str(os.path.join(folder_picker.foldername.value,new_filename)))
+    try:
+        folder=folder_picker.foldername.value
+        exp=get_exp(os.path.join(folder,new_filename))
+        print('new experiment loaded, '+str(exp.nbpos)+' different positions')
+        folder_picker.expnumber.choices=[-1]+list(map(str,range(1,exp.nbpos+1))) 
+    except:
+        print('error: not able to load experiment')
+
+viewer.window.add_dock_widget(folder_picker)
+
+#%%
+
+from magicgui import widgets
+
+methods=[]
+folder=widgets.FileEdit(mode= "d",value='F:\optorhoa')
+container = widgets.Container(widgets=[folder], labels=False)
+container.native.layout().addStretch()
+
+# when the folder changes, populate the container with a widget showing the .nd files
+@folder.changed.connect
+def list_file(new_folder:pathlib.Path):
+    while len(container) > 1:
+        container.pop(-1).native.close()
+    list_file=[f for f in os.listdir(new_folder) if f.endswith('.nd')]
+    file=widgets.ComboBox(choices=[''])
+    container.append(file)
+
+    @file.changed.connect
+    def list_exp(new_file:str):
+        if len(container) > 2:
+            container.pop(-1).native.close()
+        if not new_file=='':
+            file_path=os.path.join(folder.value,new_file)
+            print('new filename : '+str(file_path))
+    
+            exp=get_exp(file_path)
+            num_exp=widgets.ComboBox(choices=list(map(str,range(1,exp.nbpos+1))))
+            container.append(num_exp)
+            
+    #this is after, to launch list_exp even if we just changed the folder
+    if len(list_file)>0:
+        print('ok')
+        file.choices=list_file
+    
+    return container
+viewer.window.add_dock_widget(container)
 
 
-@magicgui(
-    call_button="Plot t profile",
-)
-def plot_t_profile(
-    data: napari.types.ImageData,
-    #zones: napari.types.,
-    thresh_coeff: float = 1.0,
-    thresh_min_size: int = 60,
-    rsize_factor: int = 2,
-    tophat_size: int = 10,
-    ridge_size: int = 5,
-    return_all: bool = False,
-):
 
-    return
+
+#folder_picker.show()
+
+# =============================================================================
+# import time
+# import warnings
+# from qtpy.QtWidgets import QSpacerItem, QSizePolicy
+# from napari_plugin_engine import napari_hook_implementation
+# from qtpy.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QPushButton, QLabel, QSpinBox, QCheckBox
+# from qtpy.QtWidgets import QTableWidget, QTableWidgetItem, QWidget, QGridLayout, QPushButton, QFileDialog
+# from qtpy.QtCore import Qt
+# from magicgui.widgets import Table
+# from napari._qt.qthreading import thread_worker
+# from qtpy.QtCore import QTimer
+# from magicgui import magicgui
+# import pyqtgraph as pg
+# import numpy as np
+# import napari
+# 
+# 
+# @magicgui(
+#     call_button="Plot t profile",
+# )
+# def plot_t_profile(
+#     data: napari.types.ImageData,
+#     #zones: napari.types.,
+#     thresh_coeff: float = 1.0,
+#     thresh_min_size: int = 60,
+#     rsize_factor: int = 2,
+#     tophat_size: int = 10,
+#     ridge_size: int = 5,
+#     return_all: bool = False,
+# ):
+# 
+#     
+#     return
+# 
+# def extract_voxel_time_series(cpos, nlayer):
+#     """Method to extract the array element values along the first axis of a napari viewer layer.
+#     First the data array is extracted from a napari image layer and the cursor position is
+#     translated into an array index. If the index points to an element inside of the array all values along the first
+#     axis are returned as a list, otherwise None is returned.
+#     :param cpos: Position of the cursor inside of a napari viewer widget.
+#     :type cpos: numpy.ndarray
+#     :param nlayer: Napari image layer to extract data from.
+#     :type nlayer: napari.layers.image.Image
+#     """
+#     # get full data array from layer
+#     data = nlayer.data
+#     # convert cursor position to index
+#     ind = tuple(map(int, np.round(nlayer.world_to_data(cpos))))
+#     # return extracted data if index matches array
+#     if all([0 <= i < max_i for i, max_i in zip(ind, data.shape)]):
+#         return ind, data[(slice(None),) + ind[1:]]
+#     return ind, None
+# 
+# from napari.layers.shapes import Shapes
+# 
+# data = viewer.layers[0].data
+# for layer in viewer.layers:
+#     if isinstance(layer,Shapes):
+#         mask=layer.to_masks((61,1024,1024))[-1]
+#         # convert cursor position to index
+#         #ind = tuple(map(int, np.round(nlayer.world_to_data(cpos))))
+#         toplot=data[mask]
+# =============================================================================
+
 # =============================================================================
 #     @thread_worker
 #     def do_segment():
@@ -393,15 +693,3 @@ def plot_t_profile(
 # 
 # 
 # =============================================================================
-if __name__ == "__main__":
-    w = StackViewer(viewer)
-    
-    #.resize(300,300)
-    #w.setWindowTitle(‘Guru99’)
-    
-    w.show()
-    plot_t_profile.show()
-    viewer.window.add_dock_widget(w)
-    viewer.window.add_dock_widget(plot_t_profile)
-
-#viewer.layers[0].get_value(
