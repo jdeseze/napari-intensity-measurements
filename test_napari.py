@@ -58,8 +58,7 @@ viewer.layers[-1].reset_contrast_limits()
 
 viewer.reset_view()
 viewer.grid.enabled=True
-#%% STACKVIEWER
-from qtpy.QtWidgets import QPushButton,QLabel,QComboBox,QFileDialog,QWidget,QMessageBox,QMainWindow,QVBoxLayout
+#%% CLASSES
 from PIL import Image
 
 import os
@@ -204,125 +203,170 @@ def get_exp(filename):
         print(str(nb_pos))
         
         return Exp(expname,wl,nb_pos,nb_tp,comments)
+#%% STACK VIEWER
+from qtpy.QtWidgets import QPushButton,QLabel,QComboBox,QFileDialog,QWidget,QMessageBox,QMainWindow,QVBoxLayout
+import magicgui
 
-# =============================================================================
-# class StackViewer(QWidget):
-#     def __init__(self,viewer):
-#         super().__init__()
-#         
-#         self.viewer=viewer
-#         self.exp=None
-#         
-#         #set the vertical layout
-#         self.setLayout(QVBoxLayout())
-#         
-#         #add the 'Select Folder' button
-#         btn = QPushButton(self)
-#         btn.setText('Select Folder')
-#         self.layout().addWidget(btn)
-#         btn.clicked.connect(self.choose_exp)
-#         
-#         #add the dropdown list to select the experiment
-#         self.list_exp=QComboBox(self)
-#         self.layout().addWidget(self.list_exp)
-#         self.list_exp.currentTextChanged.connect(self.get_exp)
-#         
-#         #add the dropdown button to select the cell 
-#         self.cell_nb=QComboBox(self.list_exp)
-#         self.layout().addWidget(self.cell_nb)
-#         self.cell_nb.currentTextChanged.connect(self.display_exp)
-#         
-#     #function to choose the directory and have the experiments in the folder displayed
-#     def choose_exp(self):
-#         dbox = QFileDialog(self)
-#         dbox.setDirectory('F:/optorhoa')   
-#         dbox.setFileMode(QFileDialog.Directory)          
-#         if dbox.exec_():
-#             self.folder = dbox.selectedFiles()
-#         for folder_path in self.folder:
-#              filenames=[f for f in os.listdir(folder_path) if f.endswith('.nd')]  
-#         self.list_exp.clear()
-#         self.list_exp.addItems(filenames)
-#         
-#     def get_exp(self):
-#         try:
-#             print(self.folder[0])
-#             self.exp=get_exp(os.path.join(self.folder[0],self.list_exp.currentText()))
-#         except:
-#             mess=QMessageBox(self)
-#             mess.setText('Unable to load experiment')
-#             self.layout().addWidget(mess)
-#         self.cell_nb.clear()
-#         if self.exp:
-#             self.cell_nb.addItems(list(map(str,range(1,self.exp.nbpos+1))))
-#             print(self.cell_nb)
-#         else:
-#             print('no experiment was found')
-#         
-#     def display_exp(self):
-# # =============================================================================
-# #         mess=QLabel(self)
-# #         mess.setText(str(is_exp))
-# #         self.layout().addWidget(mess)
-# # =============================================================================
-#         self.viewer.layers.clear()
-#         
-#         #separate openings if it is only as a stack or not
-#         try:
-#             pos=int(self.cell_nb.currentText())
-#         except:
-#             pos=1
-#         #print(self.exp.nbpos)    
-#         for i in range(len(self.exp.wl)):
-#             if self.exp.stacks:
-#                 filename=self.exp.get_stack_name(i,pos)
-#                 #print(filename)
-#                 lazy_imread = delayed(imread)
-#                 self.viewer.add_image(imread(filename),name=self.exp.wl[i].name)
-# # =============================================================================
-# #                 stack=read_stack(filename)
-# #                 self.viewer.add_image(stack,contrast_limits=[0,2000],name=self.exp.wl[i].name)
-# #                 self.viewer.layers[-1].reset_contrast_limits()
-# # =============================================================================
-#             else:
-#                 filenames=sorted(glob(self.exp.get_image_name(i,pos,'*')),key=alphanumeric_key)
-#                 stack=read_stack(filenames)
-#                 self.viewer.add_image(stack,contrast_limits=[0,2000],name=self.exp.wl[i].name)
-#                 #set contrast limits automatically
-#                 self.viewer.layers[-1].reset_contrast_limits()
-#         
-#         self.viewer.reset_view()
-#         self.viewer.grid.enabled=True
-#         #for i in range(len(exp.wl)):
-# 
-# if __name__ == "__main__":
-#     w = StackViewer(viewer)
-#     
-#     #.resize(300,300)
-#     #w.setWindowTitle(‘Guru99’)
-#     
-#     w.show()
-#     viewer.window.add_dock_widget(w)
-# =============================================================================
+class StackViewer(QWidget):
+    def __init__(self,viewer):
+        super().__init__()
+        
+        self.viewer=viewer
+        self.exp=None
+        
+        #set the vertical layout
+        self.setLayout(QVBoxLayout())
+        
+        #add the 'Select Folder' button
+        btn = QPushButton(self)
+        btn.setText('Select Folder')
+        self.layout().addWidget(btn)
+        btn.clicked.connect(self.choose_exp)
+        
+        #add the dropdown list to select the experiment
+        self.list_exp=QComboBox(self)
+        self.layout().addWidget(self.list_exp)
+        self.list_exp.currentTextChanged.connect(self.get_exp)
+        
+        #add the dropdown button to select the cell 
+        self.cell_nb=QComboBox(self.list_exp)
+        self.layout().addWidget(self.cell_nb)
+        
+        load=QPushButton(self)
+        load.setText('Load experiment')
+        self.layout().addWidget(load)
+        load.clicked.connect(self.display_exp)
+        
+    #function to choose the directory and have the experiments in the folder displayed
+    def choose_exp(self):
+        dbox = QFileDialog(self)
+        dbox.setDirectory('F:/optorhoa')   
+        dbox.setFileMode(QFileDialog.Directory)          
+        if dbox.exec_():
+            self.folder = dbox.selectedFiles()
+        for folder_path in self.folder:
+             filenames=[f for f in os.listdir(folder_path) if f.endswith('.nd')]  
+        self.list_exp.clear()
+        self.list_exp.addItems(filenames)
+        
+    def get_exp(self):
+        try:
+            print(self.folder[0])
+            self.exp=get_exp(os.path.join(self.folder[0],self.list_exp.currentText()))
+        except:
+            mess=QMessageBox(self)
+            mess.setText('Unable to load experiment')
+            self.layout().addWidget(mess)
+        self.cell_nb.clear()
+        if self.exp:
+            self.cell_nb.addItems(list(map(str,range(1,self.exp.nbpos+1))))
+            print(self.cell_nb)
+        else:
+            print('no experiment was found')
+        
+    def display_exp(self):
+        self.viewer.layers.clear()
+        
+        #separate openings if it is only as a stack or not
+        try:
+            pos=int(self.cell_nb.currentText())
+        except:
+            pos=1
+        #print(self.exp.nbpos)    
+        for i in range(len(self.exp.wl)):
+            if self.exp.stacks:
+                filename=self.exp.get_stack_name(i,pos)
+                #print(filename)
+                lazy_imread = delayed(imread)
+                self.viewer.add_image(imread(filename),name=self.exp.wl[i].name)
+
+            else:
+                filenames=sorted(glob(self.exp.get_image_name(i,pos,'*')),key=alphanumeric_key)
+                stack=read_stack(filenames)
+                self.viewer.add_image(stack,contrast_limits=[0,2000],name=self.exp.wl[i].name)
+                #set contrast limits automatically
+                self.viewer.layers[-1].reset_contrast_limits()
+        
+        self.viewer.reset_view()
+        self.viewer.grid.enabled=True
+        #for i in range(len(exp.wl)):
+
+if __name__ == "__main__":
+    w = StackViewer(viewer)
     
-            
-#%%
+    w.resize(300,300)
+    w.setWindowTitle('Select experiment')
+    w.show()
+    viewer.window.add_dock_widget(w)
+    
+#%% SEGMENTER
 
 from magicgui import magicgui
-import os
-import pathlib
-from skimage.io import imread
-from skimage.io.collection import alphanumeric_key
-from dask import delayed
-from magicgui import widgets
+from scipy import ndimage
+from skimage import measure, filters
+import matplotlib.pyplot as plt
 
-@magicgui(foldername={"mode": "d"},
-          call_button='Load experiment',
-          )
-def folder_picker(foldername=pathlib.Path(r"F:/optorhoa")):
-    
-    print('Experiment loaded')
+def segment_threshold(img,thresh=1.0):
+    #img=(img/2^8).astype(np.uint8)
+    binary = img > thresh
+    dil=ndimage.binary_dilation(binary,iterations=2)
+    filled=ndimage.binary_fill_holes(dil).astype(int)
+    label_img, cc_num = ndimage.label(filled)
+    CC = ndimage.find_objects(label_img)
+    cc_areas = ndimage.sum(filled, label_img, range(cc_num+1))
+    area_mask = (cc_areas < max(cc_areas))
+    label_img[area_mask[label_img]] = 0
+    try:
+        contours = measure.find_contours(label_img, 0.8)
+    except:
+        contours=[]
+    if len(contours)>0:
+        contour=contours[0]
+    else:
+        contour=np.array([None])
+    #return (label_img>0)*255, contour
+    fig, ax = plt.subplots()
+    ax.imshow(img, cmap=plt.cm.gray)
+    ax.plot(contour[:, 1], contour[:, 0], linewidth=2)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    return (label_img>0)*255#np.array(fig)>0
+
+@magicgui(call_button='Segment',
+          coeff={"widget_type": "FloatSlider",'min':0.5, 'max': 1.5,'step':0.01},)
+def segment(data: napari.types.ImageData,coeff=1.0):
+    med=filters.median(data[0])
+    pre_thresh=filters.threshold_otsu(med)
+    print(pre_thresh)
+    segmented = data.map_blocks(segment_threshold,coeff*pre_thresh)
+    print(data[0])
+    viewer.add_image(segmented,name='segmented')
+
+@segment.coeff.changed.connect
+def change_seg(new_coeff:int):
+    viewer.layers.remove('segmented')
+    segment()
+
+
+if __name__ == "__main__":
+    viewer.window.add_dock_widget(segment)
+#%%
 # =============================================================================
+# 
+# from magicgui import magicgui
+# import os
+# import pathlib
+# from skimage.io import imread
+# from skimage.io.collection import alphanumeric_key
+# from dask import delayed
+# from magicgui import widgets
+# 
+# @magicgui(foldername={"mode": "d"},
+#           call_button='Load experiment',
+#           )
+# def folder_picker(foldername=pathlib.Path(r"F:/optorhoa")):
+#     
+#     print('Experiment loaded')
 #     filepath=os.path.join(folder_picker.foldername.value,folder_picker.filename.value)
 #     try:
 #         exp=get_exp(filepath)
@@ -348,70 +392,115 @@ def folder_picker(foldername=pathlib.Path(r"F:/optorhoa")):
 #         viewer.grid.enabled=True    
 #     else:
 #         print('errooor')
+# 
+# #when the folder name changes, we need to change the list of possible files
+# @folder_picker.foldername.changed.connect
+# def foldername_callback(new_foldername: pathlib.Path):
+#     print('new folder is : '+str(new_foldername))
+#     new_filenames=['']+[f for f in os.listdir(new_foldername) if f.endswith('.nd')]
+#     folder_picker.filename.choices=new_filenames
+#     
+#     #folder_picker.show()
+# 
+# #when the filename changes, we need to change the experiment numbers
+# @folder_picker.filename.changed.connect
+# def filename_callback(new_filename: str):
+#     print('new filename : '+str(os.path.join(folder_picker.foldername.value,new_filename)))
+#     try:
+#         folder=folder_picker.foldername.value
+#         exp=get_exp(os.path.join(folder,new_filename))
+#         print('new experiment loaded, '+str(exp.nbpos)+' different positions')
+#         folder_picker.expnumber.choices=[-1]+list(map(str,range(1,exp.nbpos+1))) 
+#     except:
+#         print('error: not able to load experiment')
+# 
+# viewer.window.add_dock_widget(folder_picker)
 # =============================================================================
 
-#when the folder name changes, we need to change the list of possible files
-@folder_picker.foldername.changed.connect
-def foldername_callback(new_foldername: pathlib.Path):
-    print('new folder is : '+str(new_foldername))
-    new_filenames=['']+[f for f in os.listdir(new_foldername) if f.endswith('.nd')]
-    folder_picker.filename.choices=new_filenames
-    
-    #folder_picker.show()
-
-#when the filename changes, we need to change the experiment numbers
-@folder_picker.filename.changed.connect
-def filename_callback(new_filename: str):
-    print('new filename : '+str(os.path.join(folder_picker.foldername.value,new_filename)))
-    try:
-        folder=folder_picker.foldername.value
-        exp=get_exp(os.path.join(folder,new_filename))
-        print('new experiment loaded, '+str(exp.nbpos)+' different positions')
-        folder_picker.expnumber.choices=[-1]+list(map(str,range(1,exp.nbpos+1))) 
-    except:
-        print('error: not able to load experiment')
-
-viewer.window.add_dock_widget(folder_picker)
-
 #%%
-
-from magicgui import widgets
-
-methods=[]
-folder=widgets.FileEdit(mode= "d",value='F:\optorhoa')
-container = widgets.Container(widgets=[folder], labels=False)
-container.native.layout().addStretch()
-
-# when the folder changes, populate the container with a widget showing the .nd files
-@folder.changed.connect
-def list_file(new_folder:pathlib.Path):
-    while len(container) > 1:
-        container.pop(-1).native.close()
-    list_file=[f for f in os.listdir(new_folder) if f.endswith('.nd')]
-    file=widgets.ComboBox(choices=[''])
-    container.append(file)
-
-    @file.changed.connect
-    def list_exp(new_file:str):
-        if len(container) > 2:
-            container.pop(-1).native.close()
-        if not new_file=='':
-            file_path=os.path.join(folder.value,new_file)
-            print('new filename : '+str(file_path))
-    
-            exp=get_exp(file_path)
-            num_exp=widgets.ComboBox(choices=list(map(str,range(1,exp.nbpos+1))))
-            container.append(num_exp)
-            
-    #this is after, to launch list_exp even if we just changed the folder
-    if len(list_file)>0:
-        print('ok')
-        file.choices=list_file
-    
-    return container
-viewer.window.add_dock_widget(container)
-
-
+# =============================================================================
+# import pathlib 
+# from magicgui import widgets,magicgui
+# 
+# methods=[]
+# 
+# class Container(widgets.Container):
+#     def __init__(self):
+#         self.folder=widgets.FileEdit(mode= "d",value='F:\optorhoa')
+#         self.file=widgets.ComboBox(choices=[''])
+#         self.num_exp=widgets.ComboBox(choices=[''])
+#         self.widgets=[self.folder,self.file,self.num_exp]
+#         self.native.layout().addStretch()
+# 
+# container_exp_choice=Container()
+# folder=container_exp_choice.folder
+# file=container_exp_choice.file
+# num_exp=container_exp_choice.num_exp
+# 
+# # when the folder changes, populate the container with a widget showing the .nd files
+# @folder.changed.connect
+# def list_file(new_folder:pathlib.Path):
+#     #while len(container_exp_choice) > 1:
+#         #container_exp_choice.pop(-1).native.close()
+#     list_file=[f for f in os.listdir(new_folder) if f.endswith('.nd')]
+#     
+#     #container_exp_choice.append(file)
+#             
+#     #this is after, to launch list_exp even if we just changed the folder
+#     if len(list_file)>0:
+#         file.choices=list_file
+# 
+#     #return container_exp_choice
+# 
+#     @file.changed.connect
+#     def list_exp(new_file:str):
+#         #if len(container_exp_choice) > 2:
+#             #container_exp_choice.pop(-1).native.close()
+#         try:
+#             file_path=os.path.join(folder.value,new_file)
+#             print('new filename : '+str(file_path))
+#     
+#             exp=get_exp(file_path)
+#             nbpos=exp.nbpos
+#             num_exp.choices=list(map(str,range(1,nbpos+1)))
+#             container_exp_choice.append(num_exp)
+#         except: 
+#             print('no experiment numbers: problem')
+#             
+#         return container_exp_choice
+#     
+# 
+# @magicgui(call_button='Load experiment')
+# def load_exp():
+#     try:
+#         exp=get_exp(os.path.join(folder.value,file.value))
+#         print('new experiment loading, '+str(exp.nbpos)+' different positions')
+#         viewer.layers.clear()
+#         for i in range(len(exp.wl)):
+#             if exp.stacks:
+#                 stackname=exp.get_stack_name(i,num_exp.value)
+#                 viewer.add_image(imread(stackname),name=exp.wl[i].name)
+#             else:
+#                 files=sorted(glob(exp.get_image_name(i,num_exp.value,'*')),key=alphanumeric_key)
+#                 #print(files)
+#                 stack=read_stack(files)
+#                 viewer.add_image(stack,contrast_limits=[0,2000],name=exp.wl[i].name)
+#                 #set contrast limits automatically
+#                 viewer.layers[-1].reset_contrast_limits()    
+#         viewer.reset_view()
+#         viewer.grid.enabled=True   
+#     except Exception as inst:
+#         print(type(inst))    # the exception instance
+#         print(inst.args)     # arguments stored in .args
+#         print(inst)   
+#         print('error: not able to load experiment')    
+# 
+# container_load_exp=widgets.Container(widgets=[container_exp_choice,load_exp], labels=False)
+# 
+# viewer.window.add_dock_widget(container_load_exp)
+# 
+# 
+# =============================================================================
 
 
 #folder_picker.show()
