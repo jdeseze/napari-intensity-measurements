@@ -60,8 +60,9 @@ viewer.reset_view()
 viewer.grid.enabled=True
 #%% CLASSES
 from PIL import Image
-
+import math
 import os
+from scipy.interpolate import interp1d
 
 class WL:
     def __init__(self,name,step=1):
@@ -146,7 +147,55 @@ class Exp:
     
     def disp_message(self):
         return self.get_stack_name(0)
-
+    
+class Result:
+    def __init__(self, exp,prot,wl_ind,pos,startacq=0,act=[],notact=[],whole=[],background=0):
+        self.exp=exp
+        self.prot=prot
+        self.wl_ind=wl_ind
+        self.act=act
+        self.notact=notact
+        self.whole=whole
+        self.channel=self.exp.wl[wl_ind]
+        self.pos=pos
+        self.startacq=startacq
+        self.background=background
+    
+    def plot(self,axes,zone='act',plot_options=None):
+        toplot=self.get_zone(zone)#running_mean(self.get_zone(zone),4)
+        toplot[toplot==0]=math.nan
+        toplot=(np.array(toplot)-self.background)-(toplot[0]-self.background)
+        if not plot_options:
+            plot_options={}            
+        x=(np.arange(toplot.size))*self.channel.step*self.exp.timestep/60
+        axes.plot(x,toplot,**plot_options)
+        return x,toplot#go.Scatter(x=x,y=toplot,mode='lines')
+    
+    def get_abs_val(self,zone='act'):
+        toplot=np.array(self.get_zone(zone))
+        toplot[toplot==0]=math.nan
+        abs_value=np.mean(toplot[0])-self.background      
+        return abs_value
+    
+    def xy2plot(self,zone='act',plot_options=None):
+        toplot=self.get_zone(zone)#running_mean(self.get_zone(zone),4)
+        toplot[toplot==0]=math.nan
+        toplot=(toplot)#-self.background)-(np.mean(toplot[0])-self.background)
+        if not plot_options:
+            plot_options={}            
+        x=(np.arange(toplot.size))*self.channel.step*self.exp.timestep/60
+        return x,toplot#go.Scatter(x=x,y=toplot,mode='lines')   
+    
+    def get_zone(self,zone):
+        if zone=='act':
+            return np.array(self.act)
+        if zone=='notact':
+            return np.array(self.notact)
+        if zone=='whole':
+            return np.array(self.whole)
+    
+    def name(self):
+        return self.exp.name.split('\\')[-1]+' : pos '+str(self.pos)
 
 def get_exp(filename):
     nb_pos=1
@@ -203,6 +252,67 @@ def get_exp(filename):
         print(str(nb_pos))
         
         return Exp(expname,wl,nb_pos,nb_tp,comments)
+
+class Result_array(list):
+    def __init__(self,data):
+        list.__init__(self,data)
+    
+    def plot(self,axes,zone='act',wl_name="TIRF 561",prot=True,plot_options={}):
+        [result.plot(axes,zone,plot_options) for result in self if result.channel.name==wl_name and result.prot==prot]    
+
+    
+# =============================================================================
+#     def xy2plot(self,zone='act',wl_name="TIRF 561",prot=True):
+#         toplot=[]
+#         zones=np.array(['act','notact','whole'])
+#         colors=np.array(['blue','red','green'])
+#         for res in self:
+#             if res.channel.name==wl_name and res.prot==prot:
+#                 x,y=res.xy2plot(zone)            
+#                 toplot.append(go.Scatter(x=x,y=y,mode='lines',line_color=colors[zones==zone][0],name=res.name()))
+#         return toplot
+# =============================================================================
+    
+    def plot_mean(self,zone='act',wl_name="TIRF 561",prot=True,plot_options={}):
+        #time step should be in minutes
+
+        t_start=0
+        t_end=min((len(result.get_zone(zone))-1)*result.exp.timestep for result in self if result.channel.name==wl_name)
+        nbsteps=min(len(result.get_zone(zone)) for result in self)
+        interp=[]
+        for result in self: 
+            if result.channel.name==wl_name and (not math.isnan(np.sum(result.get_zone(zone)))) and result.prot==prot:
+                values=result.get_zone(zone)
+                tstep=result.exp.timestep
+                normvals=(np.array(result.get_zone(zone))-result.background)/(np.mean(np.array(result.get_zone(zone))[0])-result.background)
+                lasttime=len(normvals)*tstep-0.001
+                times=np.arange(0,lasttime,tstep)
+                
+                if sum(np.array(values)==0)>0:
+                    f_endtemp=list(values).index(next(filter(lambda x: x==0, values)))
+                    normvals=normvals[0:f_endtemp]
+                    times=np.arange(0,(f_endtemp)*result.exp.timestep,tstep)
+                    if f_endtemp*result.exp.timestep<t_end:
+                        t_end=times[-1]
+
+                interp.append(interp1d(times,normvals))
+                
+        x=np.arange(t_start,t_end,int((t_end-t_start)/nbsteps))
+        y=np.vstack([f(x) for f in interp])
+        
+        ym=np.average(y, axis=0)
+        sigma=np.std(y,axis=0)
+        
+        yh=ym+sigma/(y.shape[0]**0.5)
+        yb=ym-sigma/(y.shape[0]**0.5)
+        
+        #clear_plot(size)
+        
+        plt.plot(x/60,ym,linewidth=2,**plot_options)
+
+        plt.plot(x/60,yh,linewidth=0.05,**plot_options)
+        plt.plot(x/60,yb,linewidth=0.05,**plot_options)
+        plt.fill_between(x/60,yh,yb,alpha=0.2,**plot_options)
 #%% STACK VIEWER
 from qtpy.QtWidgets import QPushButton,QLabel,QComboBox,QFileDialog,QWidget,QMessageBox,QMainWindow,QVBoxLayout
 import magicgui
@@ -261,11 +371,20 @@ class StackViewer(QWidget):
         if self.exp:
             self.cell_nb.addItems(list(map(str,range(1,self.exp.nbpos+1))))
             print(self.cell_nb)
+            return self.exp
         else:
             print('no experiment was found')
+            return False
         
     def display_exp(self):
+        
+        for layer in self.viewer.layers:
+            if type(layer)==napari.layers.shapes.shapes.Shapes:
+                shape=layer
         self.viewer.layers.clear()
+        if shape:
+            print('ok')
+            self.viewer.add_layer(shape)
         
         #separate openings if it is only as a stack or not
         try:
@@ -286,6 +405,7 @@ class StackViewer(QWidget):
                 self.viewer.add_image(stack,contrast_limits=[0,2000],name=self.exp.wl[i].name)
                 #set contrast limits automatically
                 self.viewer.layers[-1].reset_contrast_limits()
+        
         
         self.viewer.reset_view()
         self.viewer.grid.enabled=True
@@ -312,7 +432,7 @@ def segment_threshold(img,thresh=1.0):
     dil=ndimage.binary_dilation(binary,iterations=2)
     filled=ndimage.binary_fill_holes(dil).astype(int)
     label_img, cc_num = ndimage.label(filled)
-    CC = ndimage.find_objects(label_img)
+    #CC = ndimage.find_objects(label_img)
     cc_areas = ndimage.sum(filled, label_img, range(cc_num+1))
     area_mask = (cc_areas < max(cc_areas))
     label_img[area_mask[label_img]] = 0
@@ -325,22 +445,28 @@ def segment_threshold(img,thresh=1.0):
     else:
         contour=np.array([None])
     #return (label_img>0)*255, contour
-    fig, ax = plt.subplots()
-    ax.imshow(img, cmap=plt.cm.gray)
-    ax.plot(contour[:, 1], contour[:, 0], linewidth=2)
-    ax.set_xticks([])
-    ax.set_yticks([])
+# =============================================================================
+#     fig, ax = plt.subplots()
+#     ax.imshow(img, cmap=plt.cm.gray)
+#     ax.plot(contour[:, 1], contour[:, 0], linewidth=2)
+#     ax.set_xticks([])
+#     ax.set_yticks([])
+# =============================================================================
     return (label_img>0)*255#np.array(fig)>0
 
 @magicgui(call_button='Segment',
-          coeff={"widget_type": "FloatSlider",'min':0.5, 'max': 1.5,'step':0.01},)
-def segment(data: napari.types.ImageData,coeff=1.0):
+          coeff={"widget_type": "FloatSlider",'min':0.5, 'max': 1.5,'step':0.01},
+          )
+def segment(data:napari.types.ImageData,coeff=1.0):
     med=filters.median(data[0])
     pre_thresh=filters.threshold_otsu(med)
     print(pre_thresh)
+    if type(data)==np.ndarray:
+        print('np.ndarray')
+        data=da.from_array(data)
     segmented = data.map_blocks(segment_threshold,coeff*pre_thresh)
     print(data[0])
-    viewer.add_image(segmented,name='segmented')
+    viewer.add_image(segmented,name='segmented',opacity=0.2)
 
 @segment.coeff.changed.connect
 def change_seg(new_coeff:int):
@@ -350,6 +476,121 @@ def change_seg(new_coeff:int):
 
 if __name__ == "__main__":
     viewer.window.add_dock_widget(segment)
+    
+#%% Intensity calculator
+import pandas as pd
+import pickle
+
+def write_on_text_file(results,output):
+    output.write('Number of datas : '+str(len(results))+' \n')
+    output.write('\n')
+    for result in results:
+        output.write('Experiment: '+str(result.exp.name)+' \n')
+        output.write('Position: '+str(result.pos)+' \n')
+        output.write('Channel: '+str(result.channel.name)+' \n')
+        output.write('Background value: '+str(result.background)+' \n')
+        output.write('Activated zone: '+str(result.act)+' \n')
+        output.write('Not activated zone: '+str(result.notact)+' \n')
+        output.write('\n')
+
+@magicgui(call_button='Calculate intensities',
+          layer_meas={"widget_type": "RadioButtons", "choices":viewer.layers})
+def calculate_intensities(
+        layer_meas: napari.types.ImageData,
+        mask : napari.types.ImageData,
+        mask_act : napari.types.ShapesData,
+        prot=False):
+    exp=w.get_exp()
+    if not exp:
+        print('no experiment')
+        return
+    pos=int(w.cell_nb.currentText())
+    print("position"+str(pos))
+    wl_meas=next(i for i, v in enumerate(exp.wl) if v.name==layer_meas.name)
+    wl_seg=next(i for i, v in enumerate(exp.wl) if v.name in segment.data.current_choice)
+    whole=[]
+    act=[]  
+    notact=[]
+    result=Result(exp,prot,wl_meas,pos)
+    stepmeas=exp.wl[wl_meas].step
+    nb_img=int(exp.nbtime/stepmeas)
+    stepseg=exp.wl[wl_seg].step      
+    inds_mask=(tuple(slice(int(i[0]), int(i[1])) for i in np.array([mask_act[0][0][1:],mask_act[0][2][1:]]).T))
+    for i in range(nb_img):
+        #define the good frame to take for each segmentation or activation
+        timg=i*stepmeas+1
+        tseg=int(i*stepmeas/stepseg)*stepseg+1
+        print(tseg)
+        #take mask of segmentation
+        mask_seg=mask[i]
+        #take values in current image
+        img=np.array(Image.open(exp.get_image_name(wl_meas,pos,timg)))
+        whole_int=np.sum(img[mask_seg>0])
+        whole_surf=np.sum(np.array(mask_seg)>0)
+        print(whole_int)
+        print(whole_surf)
+        mask_act=np.zeros((1024,1024))
+        mask_act[inds_mask]=1
+        act_int=np.sum(img[(mask_seg>0)*(mask_act>0)])
+        act_surf=np.sum((np.array(mask_seg)>0)*(mask_act>0))
+        #print(np.sum((mask_act>0)*(mask_seg>0)))
+        if i==0:
+            background=np.mean(img[0:20,0:20])
+        whole.append(whole_int/whole_surf)
+        notact.append((whole_int-act_int)/(whole_surf-act_surf))
+        if act_surf==0:
+            act.append(0)
+        else:
+            act.append(act_int/act_surf)
+    print(act)
+    print(notact)
+    result.whole, result.act, result.notact, result.background =whole,act,notact,background  
+    npwhole=(np.array(whole)-background)/whole[0]
+    npact=(np.array(act)-background)/act[0]
+    npnotact=(np.array(notact)-background)/notact[0]
+    #put into pd dataframe
+# =============================================================================
+#     current_resultpd=pd.DataFrame(np.array([npwhole,npact,npnotact]).transpose())
+#     resultspd=pd.read_pickle('./pdresults.pkl')
+#     new_resultspd=pd.concat([resultspd,current_resultpd], ignore_index=True, axis=1)
+#     new_resultspd.to_pickle('./pdresults.pkl')
+# =============================================================================
+    #add to the list of results
+    with open('./results.pkl', 'rb') as output:
+        results=pickle.load(output)
+    results.append(result)
+    with open('./results.pkl', 'wb') as output:
+        pickle.dump([result], output, pickle.HIGHEST_PROTOCOL)
+    with open('./results.txt','w') as output:
+        write_on_text_file([result],output)
+
+
+    
+if __name__ == "__main__":
+    viewer.window.add_dock_widget(calculate_intensities)
+
+#%% PLOT VALUES
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_qt5agg import FigureCanvas
+
+
+
+@magicgui(call_button='Plot values')
+def plot_values():
+    with open('./results.pkl', 'rb') as output:
+        results=pickle.load(output)
+    #Result_array(results).plot()
+    fig=Figure()
+    canvas=FigureCanvas(fig)
+    ax=fig.add_subplot(111)
+    #ax.plot(results[0].act)
+    Result_array(results).plot(axes=ax,plot_options={'color':'blue'})
+    Result_array(results).plot(axes=ax,zone='notact',plot_options={'color':'red'})
+    viewer.window.add_dock_widget(canvas)
+
+
+if __name__ == "__main__":
+    viewer.window.add_dock_widget(plot_values)
 #%%
 # =============================================================================
 # 
