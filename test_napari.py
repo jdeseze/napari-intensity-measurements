@@ -460,9 +460,9 @@ def segment_threshold(img,thresh=1.0):
 def segment(data:napari.types.ImageData,coeff=1.0):
     med=filters.median(data[0])
     pre_thresh=filters.threshold_otsu(med)
-    print(pre_thresh)
+    print(type(data))
     if type(data)==np.ndarray:
-        print('np.ndarray')
+        print('np.ndarray, it cannot be segmented like this')
         data=da.from_array(data)
     segmented = data.map_blocks(segment_threshold,coeff*pre_thresh)
     print(data[0])
@@ -480,6 +480,7 @@ if __name__ == "__main__":
 #%% Intensity calculator
 import pandas as pd
 import pickle
+import time
 
 def write_on_text_file(results,output):
     output.write('Number of datas : '+str(len(results))+' \n')
@@ -500,6 +501,7 @@ def calculate_intensities(
         mask : napari.types.ImageData,
         mask_act : napari.types.ShapesData,
         prot=False):
+    ta=time.time()
     exp=w.get_exp()
     if not exp:
         print('no experiment')
@@ -515,25 +517,27 @@ def calculate_intensities(
     stepmeas=exp.wl[wl_meas].step
     nb_img=int(exp.nbtime/stepmeas)
     stepseg=exp.wl[wl_seg].step      
-    inds_mask=(tuple(slice(int(i[0]), int(i[1])) for i in np.array([mask_act[0][0][1:],mask_act[0][2][1:]]).T))
-    for i in range(nb_img):
+    inds_mask_act=(tuple(slice(int(i[0]), int(i[1])) for i in np.array([mask_act[0][0][1:],mask_act[0][2][1:]]).T))
+    tb=time.time()
+    print(time.time()-ta)
+    for i in range(10):
         #define the good frame to take for each segmentation or activation
         timg=i*stepmeas+1
         tseg=int(i*stepmeas/stepseg)*stepseg+1
         print(tseg)
         #take mask of segmentation
-        mask_seg=mask[i]
+        mask_seg=np.array(mask[i])>0
         #take values in current image
-        img=np.array(Image.open(exp.get_image_name(wl_meas,pos,timg)))
-        whole_int=np.sum(img[mask_seg>0])
-        whole_surf=np.sum(np.array(mask_seg)>0)
-        print(whole_int)
-        print(whole_surf)
-        mask_act=np.zeros((1024,1024))
-        mask_act[inds_mask]=1
-        act_int=np.sum(img[(mask_seg>0)*(mask_act>0)])
-        act_surf=np.sum((np.array(mask_seg)>0)*(mask_act>0))
-        #print(np.sum((mask_act>0)*(mask_seg>0)))
+        img=np.array(layer_meas[i])
+        #img=np.array(Image.open(exp.get_image_name(wl_meas,pos,timg)))
+        #calculate whole intensity
+        whole_int=np.sum(img[mask_seg])
+        #calculate whole surface
+        whole_surf=np.sum(mask_seg)
+        #calculate the intensity in the area of activation
+        act_int=np.sum(img[inds_mask_act][mask_seg[inds_mask_act]])
+        #calculate the area of activation
+        act_surf=np.sum((mask_seg)[inds_mask_act])
         if i==0:
             background=np.mean(img[0:20,0:20])
         whole.append(whole_int/whole_surf)
@@ -542,8 +546,7 @@ def calculate_intensities(
             act.append(0)
         else:
             act.append(act_int/act_surf)
-    print(act)
-    print(notact)
+    print(time.time()-tb)
     result.whole, result.act, result.notact, result.background =whole,act,notact,background  
     npwhole=(np.array(whole)-background)/whole[0]
     npact=(np.array(act)-background)/act[0]
@@ -560,7 +563,7 @@ def calculate_intensities(
         results=pickle.load(output)
     results.append(result)
     with open('./results.pkl', 'wb') as output:
-        pickle.dump([result], output, pickle.HIGHEST_PROTOCOL)
+        pickle.dump(results, output, pickle.HIGHEST_PROTOCOL)
     with open('./results.txt','w') as output:
         write_on_text_file([result],output)
 
@@ -568,6 +571,8 @@ def calculate_intensities(
     
 if __name__ == "__main__":
     viewer.window.add_dock_widget(calculate_intensities)
+
+
 
 #%% PLOT VALUES
 from matplotlib.figure import Figure
