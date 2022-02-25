@@ -89,7 +89,7 @@ class Exp:
                 self.stacks=True
             if self.stacks:
                 #print(self.get_stack_name(maxwl_ind))
-                self.timestep=10
+                self.timestep=2
             else:
                 with open(self.get_image_name(maxwl_ind,timepoint=1), 'rb') as opened:
                     tags = exifread.process_file(opened)
@@ -261,17 +261,15 @@ class Result_array(list):
         [result.plot(axes,zone,plot_options) for result in self if result.channel.name==wl_name and result.prot==prot]    
 
     
-# =============================================================================
-#     def xy2plot(self,zone='act',wl_name="TIRF 561",prot=True):
-#         toplot=[]
-#         zones=np.array(['act','notact','whole'])
-#         colors=np.array(['blue','red','green'])
-#         for res in self:
-#             if res.channel.name==wl_name and res.prot==prot:
-#                 x,y=res.xy2plot(zone)            
-#                 toplot.append(go.Scatter(x=x,y=y,mode='lines',line_color=colors[zones==zone][0],name=res.name()))
-#         return toplot
-# =============================================================================
+    def xy2plot(self,zone='act',wl_name="TIRF 561",prot=True):
+        toplot=[]
+        zones=np.array(['act','notact','whole'])
+        colors=np.array(['blue','red','green'])
+        for res in self:
+            if res.channel.name==wl_name and res.prot==prot:
+                x,y=res.xy2plot(zone)            
+                toplot.append((x,y))
+        return toplot
     
     def plot_mean(self,zone='act',wl_name="TIRF 561",prot=True,plot_options={}):
         #time step should be in minutes
@@ -377,14 +375,15 @@ class StackViewer(QWidget):
             return False
         
     def display_exp(self):
-        
         for layer in self.viewer.layers:
             if type(layer)==napari.layers.shapes.shapes.Shapes:
                 shape=layer
         self.viewer.layers.clear()
-        if shape:
+        try:
             print('ok')
             self.viewer.add_layer(shape)
+        except:
+            pass
         
         #separate openings if it is only as a stack or not
         try:
@@ -460,12 +459,12 @@ def segment_threshold(img,thresh=1.0):
 def segment(data:napari.types.ImageData,coeff=1.0):
     med=filters.median(data[0])
     pre_thresh=filters.threshold_otsu(med)
-    print(type(data))
+    #print(type(data))
     if type(data)==np.ndarray:
         print('np.ndarray, it cannot be segmented like this')
         data=da.from_array(data)
     segmented = data.map_blocks(segment_threshold,coeff*pre_thresh)
-    print(data[0])
+    #print(data[0])
     viewer.add_image(segmented,name='segmented',opacity=0.2)
 
 @segment.coeff.changed.connect
@@ -481,6 +480,7 @@ if __name__ == "__main__":
 import pandas as pd
 import pickle
 import time
+from magicgui.widgets import Label
 
 def write_on_text_file(results,output):
     output.write('Number of datas : '+str(len(results))+' \n')
@@ -494,13 +494,21 @@ def write_on_text_file(results,output):
         output.write('Not activated zone: '+str(result.notact)+' \n')
         output.write('\n')
 
+def calculate_intandsurf(imgs,mask_seg,inds_mask_act):
+    return []
+
+try:
+    exp_layers=[layer for layer in viewer.layers if layer.name in [wl.name for wl in w.get_exp().wl]]
+except:
+    exp_layers=viewer.layers
 @magicgui(call_button='Calculate intensities',
-          layer_meas={"widget_type": "RadioButtons", "choices":viewer.layers})
+          layer_meas={"widget_type": "RadioButtons", "choices":exp_layers,'orientation':'horizontal','allow_multiple':True},
+          )
 def calculate_intensities(
         layer_meas: napari.types.ImageData,
-        mask : napari.types.ImageData,
         mask_act : napari.types.ShapesData,
-        prot=False):
+        prot=False,
+        new_file=False):
     ta=time.time()
     exp=w.get_exp()
     if not exp:
@@ -510,34 +518,42 @@ def calculate_intensities(
     print("position"+str(pos))
     wl_meas=next(i for i, v in enumerate(exp.wl) if v.name==layer_meas.name)
     wl_seg=next(i for i, v in enumerate(exp.wl) if v.name in segment.data.current_choice)
-    whole=[]
-    act=[]  
-    notact=[]
+    whole, act, notact=[],[],[]
     result=Result(exp,prot,wl_meas,pos)
     stepmeas=exp.wl[wl_meas].step
     nb_img=int(exp.nbtime/stepmeas)
     stepseg=exp.wl[wl_seg].step      
+    '''find indice of the area where the activation was done'''
     inds_mask_act=(tuple(slice(int(i[0]), int(i[1])) for i in np.array([mask_act[0][0][1:],mask_act[0][2][1:]]).T))
     tb=time.time()
-    print(time.time()-ta)
-    for i in range(10):
-        #define the good frame to take for each segmentation or activation
-        timg=i*stepmeas+1
-        tseg=int(i*stepmeas/stepseg)*stepseg+1
-        print(tseg)
-        #take mask of segmentation
-        mask_seg=np.array(mask[i])>0
-        #take values in current image
-        img=np.array(layer_meas[i])
+    '''this is what takes the longest time because it needs to do the segmentation'''
+    try:
+        mask_np=np.array(viewer.layers['segmented'].data)
+    except:
+        print('no layer named "segmented", you should create one')
+        return
+    layer_meas_np=np.array(layer_meas.data)
+    #print(nb_img)
+    for i in range(nb_img):
+        '''define the good frame to take for each segmentation or activation'''
+        timg=i*stepmeas
+        tseg=int(i*stepmeas/stepseg)*stepseg
+        #print(tseg)
+        '''take mask of segmentation'''
+        mask_seg=mask_np[tseg,:,:]>0
+        '''take values in current image'''
+        #print(time.time()-tb)
+        img=layer_meas_np[timg,:,:]
+        #print(time.time()-tb)
         #img=np.array(Image.open(exp.get_image_name(wl_meas,pos,timg)))
-        #calculate whole intensity
-        whole_int=np.sum(img[mask_seg])
-        #calculate whole surface
-        whole_surf=np.sum(mask_seg)
-        #calculate the intensity in the area of activation
-        act_int=np.sum(img[inds_mask_act][mask_seg[inds_mask_act]])
-        #calculate the area of activation
-        act_surf=np.sum((mask_seg)[inds_mask_act])
+        '''calculate whole intensity'''
+        whole_int=img[mask_seg].sum()
+        '''calculate whole surface'''
+        whole_surf=mask_seg.sum()
+        '''calculate the intensity in the area of activation'''
+        act_int=(img[inds_mask_act][mask_seg[inds_mask_act]]).sum()
+        '''calculate the area of activation'''
+        act_surf=(mask_seg[inds_mask_act]).sum()
         if i==0:
             background=np.mean(img[0:20,0:20])
         whole.append(whole_int/whole_surf)
@@ -548,9 +564,6 @@ def calculate_intensities(
             act.append(act_int/act_surf)
     print(time.time()-tb)
     result.whole, result.act, result.notact, result.background =whole,act,notact,background  
-    npwhole=(np.array(whole)-background)/whole[0]
-    npact=(np.array(act)-background)/act[0]
-    npnotact=(np.array(notact)-background)/notact[0]
     #put into pd dataframe
 # =============================================================================
 #     current_resultpd=pd.DataFrame(np.array([npwhole,npact,npnotact]).transpose())
@@ -559,13 +572,17 @@ def calculate_intensities(
 #     new_resultspd.to_pickle('./pdresults.pkl')
 # =============================================================================
     #add to the list of results
-    with open('./results.pkl', 'rb') as output:
-        results=pickle.load(output)
-    results.append(result)
+    if new_file:
+        results=[result]
+    else:
+        with open('./results.pkl', 'rb') as output:
+            results=pickle.load(output)
+        results.append(result)
     with open('./results.pkl', 'wb') as output:
         pickle.dump(results, output, pickle.HIGHEST_PROTOCOL)
     with open('./results.txt','w') as output:
-        write_on_text_file([result],output)
+        write_on_text_file(results,output)
+
 
 
     
@@ -577,8 +594,10 @@ if __name__ == "__main__":
 #%% PLOT VALUES
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvas
+import altair as alt
+import pandas as pd
 
-
+df=pd.DataFrame([[1,2],[4,5]],columns=['a','b'])
 
 @magicgui(call_button='Plot values')
 def plot_values():
@@ -592,7 +611,11 @@ def plot_values():
     Result_array(results).plot(axes=ax,plot_options={'color':'blue'})
     Result_array(results).plot(axes=ax,zone='notact',plot_options={'color':'red'})
     viewer.window.add_dock_widget(canvas)
-
+    
+    alt.Chart(df).mark_circle(size=60).encode(
+        alt.X('a',scale=alt.Scale(type='log')),
+        alt.Y('b',scale=alt.Scale(type='log')),
+        ).interactive().show()
 
 if __name__ == "__main__":
     viewer.window.add_dock_widget(plot_values)
