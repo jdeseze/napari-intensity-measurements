@@ -164,7 +164,8 @@ class Result:
     def plot(self,axes,zone='act',plot_options=None):
         toplot=self.get_zone(zone)#running_mean(self.get_zone(zone),4)
         toplot[toplot==0]=math.nan
-        toplot=(np.array(toplot)-self.background)-(toplot[0]-self.background)
+        
+        toplot=(np.array(toplot)-self.background)/(toplot[0]-self.background)
         if not plot_options:
             plot_options={}            
         x=(np.arange(toplot.size))*self.channel.step*self.exp.timestep/60
@@ -501,12 +502,13 @@ try:
     exp_layers=[layer for layer in viewer.layers if layer.name in [wl.name for wl in w.get_exp().wl]]
 except:
     exp_layers=viewer.layers
+    
 @magicgui(call_button='Calculate intensities',
-          layer_meas={"widget_type": "RadioButtons", "choices":exp_layers,'orientation':'horizontal','allow_multiple':True},
+          layers_meas={"choices":exp_layers,'allow_multiple':True},
           )
 def calculate_intensities(
-        layer_meas: napari.types.ImageData,
         mask_act : napari.types.ShapesData,
+        layers_meas=[exp_layers[0]],
         prot=False,
         new_file=False):
     ta=time.time()
@@ -516,12 +518,8 @@ def calculate_intensities(
         return
     pos=int(w.cell_nb.currentText())
     print("position"+str(pos))
-    wl_meas=next(i for i, v in enumerate(exp.wl) if v.name==layer_meas.name)
+    print(layers_meas)
     wl_seg=next(i for i, v in enumerate(exp.wl) if v.name in segment.data.current_choice)
-    whole, act, notact=[],[],[]
-    result=Result(exp,prot,wl_meas,pos)
-    stepmeas=exp.wl[wl_meas].step
-    nb_img=int(exp.nbtime/stepmeas)
     stepseg=exp.wl[wl_seg].step      
     '''find indice of the area where the activation was done'''
     inds_mask_act=(tuple(slice(int(i[0]), int(i[1])) for i in np.array([mask_act[0][0][1:],mask_act[0][2][1:]]).T))
@@ -532,56 +530,64 @@ def calculate_intensities(
     except:
         print('no layer named "segmented", you should create one')
         return
-    layer_meas_np=np.array(layer_meas.data)
-    #print(nb_img)
-    for i in range(nb_img):
-        '''define the good frame to take for each segmentation or activation'''
-        timg=i*stepmeas
-        tseg=int(i*stepmeas/stepseg)*stepseg
-        #print(tseg)
-        '''take mask of segmentation'''
-        mask_seg=mask_np[tseg,:,:]>0
-        '''take values in current image'''
-        #print(time.time()-tb)
-        img=layer_meas_np[timg,:,:]
-        #print(time.time()-tb)
-        #img=np.array(Image.open(exp.get_image_name(wl_meas,pos,timg)))
-        '''calculate whole intensity'''
-        whole_int=img[mask_seg].sum()
-        '''calculate whole surface'''
-        whole_surf=mask_seg.sum()
-        '''calculate the intensity in the area of activation'''
-        act_int=(img[inds_mask_act][mask_seg[inds_mask_act]]).sum()
-        '''calculate the area of activation'''
-        act_surf=(mask_seg[inds_mask_act]).sum()
-        if i==0:
-            background=np.mean(img[0:20,0:20])
-        whole.append(whole_int/whole_surf)
-        notact.append((whole_int-act_int)/(whole_surf-act_surf))
-        if act_surf==0:
-            act.append(0)
+    for j,layer_meas in enumerate(layers_meas):
+        whole, act, notact=[],[],[]
+        wl_meas=next(i for i, v in enumerate(exp.wl) if v.name==layer_meas.name)
+        layer_meas_np=np.array(layer_meas.data)
+        result=Result(exp,prot,wl_meas,pos)
+        stepmeas=exp.wl[wl_meas].step
+        nb_img=int(exp.nbtime/stepmeas)
+        #print(nb_img)
+
+        for i in range(nb_img):
+            '''define the good frame to take for each segmentation or activation'''
+            timg=i*stepmeas
+            tseg=int(i*stepmeas/stepseg)*stepseg
+            #print(tseg)
+            '''take mask of segmentation'''
+            mask_seg=mask_np[tseg,:,:]>0
+            '''take values in current image'''
+            #print(time.time()-tb)
+            img=layer_meas_np[timg,:,:]
+            #print(time.time()-tb)
+            #img=np.array(Image.open(exp.get_image_name(wl_meas,pos,timg)))
+            '''calculate whole intensity'''
+            whole_int=img[mask_seg].sum()
+            '''calculate whole surface'''
+            whole_surf=mask_seg.sum()
+            '''calculate the intensity in the area of activation'''
+            act_int=(img[inds_mask_act][mask_seg[inds_mask_act]]).sum()
+            '''calculate the area of activation'''
+            act_surf=(mask_seg[inds_mask_act]).sum()
+            if i==0:
+                background=np.mean(img[0:20,0:20])
+            whole.append(whole_int/whole_surf)
+            notact.append((whole_int-act_int)/(whole_surf-act_surf))
+            if act_surf==0:
+                act.append(0)
+            else:
+                act.append(act_int/act_surf)
+        print(time.time()-tb)
+        result.whole, result.act, result.notact, result.background =whole,act,notact,background  
+        #put into pd dataframe
+    # =============================================================================
+    #     current_resultpd=pd.DataFrame(np.array([npwhole,npact,npnotact]).transpose())
+    #     resultspd=pd.read_pickle('./pdresults.pkl')
+    #     new_resultspd=pd.concat([resultspd,current_resultpd], ignore_index=True, axis=1)
+    #     new_resultspd.to_pickle('./pdresults.pkl')
+    # =============================================================================
+        #add to the list of results
+        print(act)
+        if new_file and j==0:
+            results=[result]
         else:
-            act.append(act_int/act_surf)
-    print(time.time()-tb)
-    result.whole, result.act, result.notact, result.background =whole,act,notact,background  
-    #put into pd dataframe
-# =============================================================================
-#     current_resultpd=pd.DataFrame(np.array([npwhole,npact,npnotact]).transpose())
-#     resultspd=pd.read_pickle('./pdresults.pkl')
-#     new_resultspd=pd.concat([resultspd,current_resultpd], ignore_index=True, axis=1)
-#     new_resultspd.to_pickle('./pdresults.pkl')
-# =============================================================================
-    #add to the list of results
-    if new_file:
-        results=[result]
-    else:
-        with open('./results.pkl', 'rb') as output:
-            results=pickle.load(output)
-        results.append(result)
-    with open('./results.pkl', 'wb') as output:
-        pickle.dump(results, output, pickle.HIGHEST_PROTOCOL)
-    with open('./results.txt','w') as output:
-        write_on_text_file(results,output)
+            with open('./results.pkl', 'rb') as output:
+                results=pickle.load(output)
+            results.append(result)
+        with open('./results.pkl', 'wb') as output:
+            pickle.dump(results, output, pickle.HIGHEST_PROTOCOL)
+        with open('./results.txt','w') as output:
+            write_on_text_file(results,output)
 
 
 
@@ -608,14 +614,23 @@ def plot_values():
     canvas=FigureCanvas(fig)
     ax=fig.add_subplot(111)
     #ax.plot(results[0].act)
-    Result_array(results).plot(axes=ax,plot_options={'color':'blue'})
-    Result_array(results).plot(axes=ax,zone='notact',plot_options={'color':'red'})
+    for result in results:
+        result.plot(axes=ax,zone='notact',plot_options={'color':'red'})
+        result.plot(axes=ax,zone='act',plot_options={'color':'blue'})
+# =============================================================================
+#     for prot in [True,False]:
+#         for wl_name in [layer.name for layer in calculate_intensities.layers_meas.value]:
+#             Result_array(results).plot(axes=ax,plot_options={'color':'blue'},prot=prot)
+#             Result_array(results).plot(axes=ax,zone='notact',plot_options={'color':'red'},prot=prot)
+# =============================================================================
     viewer.window.add_dock_widget(canvas)
     
-    alt.Chart(df).mark_circle(size=60).encode(
-        alt.X('a',scale=alt.Scale(type='log')),
-        alt.Y('b',scale=alt.Scale(type='log')),
-        ).interactive().show()
+# =============================================================================
+#     alt.Chart(df).mark_circle(size=60).encode(
+#         alt.X('a',scale=alt.Scale(type='log')),
+#         alt.Y('b',scale=alt.Scale(type='log')),
+#         ).interactive().show()
+# =============================================================================
 
 if __name__ == "__main__":
     viewer.window.add_dock_widget(plot_values)
