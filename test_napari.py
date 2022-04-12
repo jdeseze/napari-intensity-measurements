@@ -14,7 +14,7 @@ Created on Mon Jul  5 16:37:42 2021
 # viewer = napari.view_image(data.astronaut(), rgb=True)
 # =============================================================================
 
-#%%
+#%% open default file
 
 import napari
 #from dask_image.imread import imread
@@ -26,7 +26,11 @@ import dask.array as da
 #import dask_image
 import numpy as np
 import exifread
+from common import WL,Exp,get_exp,Result,Result_array
 
+inds_cropped_area=[]
+
+#funciton to read the images from metamorph
 def read_stack(filenames):
     sample = imread(filenames[0])
     
@@ -41,6 +45,7 @@ def read_stack(filenames):
     stack.shape  # (nfiles, nz, ny, nx)
     return stack
 
+#create different layers
 filenames = sorted(glob(r"D:\optorhoa\201208_RPE_optoRhoA_PAKiRFP\cell2s_50msact_1_w2TIRF 561_t*.tif"),key=alphanumeric_key)
 stack=read_stack(filenames)
 viewer=napari.view_image(stack, contrast_limits=[0,2000],name='561')  
@@ -58,263 +63,10 @@ viewer.layers[-1].reset_contrast_limits()
 
 viewer.reset_view()
 viewer.grid.enabled=True
-#%% CLASSES
-from PIL import Image
-import math
-import os
-from scipy.interpolate import interp1d
 
-class WL:
-    def __init__(self,name,step=1):
-        self.name=name
-        self.step=step
-
-class Exp:
-
-    def __init__(self,expname,wl=[],nbpos=1,nbtime=1,comments=[]):
-        self.name=expname
-        self.nbpos=nbpos
-        self.nbtime=nbtime
-        self.wl=wl
-        self.nbwl=len(wl)
-        self.commments=comments
-        if self.nbtime==1:
-            self.timestep=0
-        else:
-            maxwl_ind=min(list(range(self.nbwl)), key=lambda ind:self.wl[ind].step)
-            try:
-                open(self.get_image_name(maxwl_ind,timepoint=1), 'rb')
-                self.stacks=False
-            except:
-                self.stacks=True
-            if self.stacks:
-                #print(self.get_stack_name(maxwl_ind))
-                self.timestep=2
-            else:
-                with open(self.get_image_name(maxwl_ind,timepoint=1), 'rb') as opened:
-                    tags = exifread.process_file(opened)
-                    time_str=tags['Image DateTime'].values
-                    h, m, s = time_str.split(' ')[1].split(':')
-                    time1=int(h) * 3600 + int(m) * 60 + float(s)
-                with open(self.get_image_name(maxwl_ind,timepoint=int((nbtime-1)/self.wl[maxwl_ind].step+1)), 'rb') as opened:
-                    tags = exifread.process_file(opened)
-                    time_str=tags['Image DateTime'].values
-                    h, m, s = time_str.split(' ')[1].split(':')
-                    time2=int(h) * 3600 + int(m) * 60 + float(s)
-                    self.timestep=(time2-time1)/self.nbtime
-    
-    #use this if the stack was not build 
-    def get_image_name(self,wl_ind,pos=1,timepoint=1,sub_folder=''):
-        if self.nbtime==1:
-            tpstring=''
-        else:
-            tpstring='_t'+str(timepoint)
-        if self.nbpos==1:
-            posstring=''
-        else:
-            posstring='_s'+str(pos)
-        return '\\'.join(self.name.split('/')[0:-1]+[self.name.split('/')[-1]])+'_w'+str(wl_ind+1)+self.wl[wl_ind].name+posstring+tpstring+'.tif'    
-        #return self.name+'_w'+str(wl_ind+1)+self.wl[wl_ind].name+posstring+tpstring+'.tif'
-   
-    #use this if there is only the stack, in the "Stacks" folder
-    def get_stack_name(self,wl_ind,pos=1,sub_folder='Stacks'):
-        if self.nbpos==1:
-            return '\\'.join(self.name.split('\\')[0:-1]+[sub_folder]+[self.name.split('\\')[-1]])+'_w'+str(wl_ind+1)+self.wl[wl_ind].name+'.tif'
-        else:
-            posstring='_s'+str(pos)
-            return '\\'.join(self.name.split('\\')[0:-1]+[sub_folder]+[self.name.split('\\')[-1]])+'_w'+str(wl_ind+1)+self.wl[wl_ind].name+posstring+'.tif'
-    
-    def get_first_image(self,wl_ind,pos=1,timepoint=''):
-        timepoint=1
-        if self.stacks:
-            I=Image.open(self.get_stack_name(wl_ind,pos))
-            I.seek(timepoint)
-            return I
-        else:
-            return Image.open(self.get_image_name(wl_ind,pos,timepoint))
-    
-    def get_last_image(self,wl_ind,pos=1,timepoint=1):
-        last_ind=int(self.nbtime/self.wl[wl_ind].step-1)*self.wl[wl_ind].step+1
-        if self.stacks:
-            I=Image.open(self.get_stack_name(wl_ind,pos))
-            I.seek(timepoint)
-            return I
-        else:        
-            return Image.open(self.get_image_name(wl_ind,pos,last_ind))
-    
-    def get_sizeimg(self):
-        return self.get_first_image(0).size
-    
-    def disp_message(self):
-        return self.get_stack_name(0)
-    
-class Result:
-    def __init__(self, exp,prot,wl_ind,pos,startacq=0,act=[],notact=[],whole=[],background=0):
-        self.exp=exp
-        self.prot=prot
-        self.wl_ind=wl_ind
-        self.act=act
-        self.notact=notact
-        self.whole=whole
-        self.channel=self.exp.wl[wl_ind]
-        self.pos=pos
-        self.startacq=startacq
-        self.background=background
-    
-    def plot(self,axes,zone='act',plot_options=None):
-        toplot=self.get_zone(zone)#running_mean(self.get_zone(zone),4)
-        toplot[toplot==0]=math.nan
-        
-        toplot=(np.array(toplot)-self.background)/(toplot[0]-self.background)
-        if not plot_options:
-            plot_options={}            
-        x=(np.arange(toplot.size))*self.channel.step*self.exp.timestep/60
-        axes.plot(x,toplot,**plot_options)
-        return x,toplot#go.Scatter(x=x,y=toplot,mode='lines')
-    
-    def get_abs_val(self,zone='act'):
-        toplot=np.array(self.get_zone(zone))
-        toplot[toplot==0]=math.nan
-        abs_value=np.mean(toplot[0])-self.background      
-        return abs_value
-    
-    def xy2plot(self,zone='act',plot_options=None):
-        toplot=self.get_zone(zone)#running_mean(self.get_zone(zone),4)
-        toplot[toplot==0]=math.nan
-        toplot=(toplot)#-self.background)-(np.mean(toplot[0])-self.background)
-        if not plot_options:
-            plot_options={}            
-        x=(np.arange(toplot.size))*self.channel.step*self.exp.timestep/60
-        return x,toplot#go.Scatter(x=x,y=toplot,mode='lines')   
-    
-    def get_zone(self,zone):
-        if zone=='act':
-            return np.array(self.act)
-        if zone=='notact':
-            return np.array(self.notact)
-        if zone=='whole':
-            return np.array(self.whole)
-    
-    def name(self):
-        return self.exp.name.split('\\')[-1]+' : pos '+str(self.pos)
-
-def get_exp(filename):
-    nb_pos=1
-    nb_wl=1
-    with open(filename,'r') as file:
-        i=0
-        line=file.readline()
-        comments=[]
-        iscomments=False
-        while not line.rstrip().split(', ')[0]=='"NTimePoints"' and i<50:
-            if line.rstrip().split(', ')[0]=='"StartTime1"':
-                iscomments=False
-            if iscomments:
-                comments.append(line.rstrip())
-            if line.rstrip().split(', ')[0]=='"Description"':
-                iscomments=True
-                comments.append(str(line.rstrip().split(', ')[1]))
-            line=file.readline()
-            i+=1
-            
-        #get number of timepoints
-        nb_tp=int(line.rstrip().split(', ')[1])
-        line=file.readline()
-        
-        #get positions if exist
-        if line.split(', ')[1].rstrip('\n')=='TRUE':
-            line=file.readline()
-            nb_pos=int(line.split(', ')[1].rstrip('\n'))
-            for i in range(nb_pos):
-                file.readline()            
-        file.readline()
-        
-        #get number of wavelengths
-        line=file.readline()
-        nb_wl=int(line.rstrip().split(', ')[1])
-    
-        #create all new wavelengths
-        wl=[]
-        for i in range (nb_wl):
-            line=file.readline()
-            wl.append(WL(line.rstrip().split(', ')[1].strip('\"')))
-            file.readline()
-    
-        #change the time steps
-        line=file.readline()
-        while line.split(', ')[0].strip('\"')=='WavePointsCollected':
-            sep=line.rstrip().split(', ')
-            if len(sep)>3:
-                wl[int(sep[1])-1].step=int(sep[3])-int(sep[2])
-            line=file.readline()
-        
-        expname=filename.rstrip('d').rstrip('n').rstrip('.')
-        
-        print(str(nb_pos))
-        
-        return Exp(expname,wl,nb_pos,nb_tp,comments)
-
-class Result_array(list):
-    def __init__(self,data):
-        list.__init__(self,data)
-    
-    def plot(self,axes,zone='act',wl_name="TIRF 561",prot=True,plot_options={}):
-        [result.plot(axes,zone,plot_options) for result in self if result.channel.name==wl_name and result.prot==prot]    
-
-    
-    def xy2plot(self,zone='act',wl_name="TIRF 561",prot=True):
-        toplot=[]
-        zones=np.array(['act','notact','whole'])
-        colors=np.array(['blue','red','green'])
-        for res in self:
-            if res.channel.name==wl_name and res.prot==prot:
-                x,y=res.xy2plot(zone)            
-                toplot.append((x,y))
-        return toplot
-    
-    def plot_mean(self,zone='act',wl_name="TIRF 561",prot=True,plot_options={}):
-        #time step should be in minutes
-
-        t_start=0
-        t_end=min((len(result.get_zone(zone))-1)*result.exp.timestep for result in self if result.channel.name==wl_name)
-        nbsteps=min(len(result.get_zone(zone)) for result in self)
-        interp=[]
-        for result in self: 
-            if result.channel.name==wl_name and (not math.isnan(np.sum(result.get_zone(zone)))) and result.prot==prot:
-                values=result.get_zone(zone)
-                tstep=result.exp.timestep
-                normvals=(np.array(result.get_zone(zone))-result.background)/(np.mean(np.array(result.get_zone(zone))[0])-result.background)
-                lasttime=len(normvals)*tstep-0.001
-                times=np.arange(0,lasttime,tstep)
-                
-                if sum(np.array(values)==0)>0:
-                    f_endtemp=list(values).index(next(filter(lambda x: x==0, values)))
-                    normvals=normvals[0:f_endtemp]
-                    times=np.arange(0,(f_endtemp)*result.exp.timestep,tstep)
-                    if f_endtemp*result.exp.timestep<t_end:
-                        t_end=times[-1]
-
-                interp.append(interp1d(times,normvals))
-                
-        x=np.arange(t_start,t_end,int((t_end-t_start)/nbsteps))
-        y=np.vstack([f(x) for f in interp])
-        
-        ym=np.average(y, axis=0)
-        sigma=np.std(y,axis=0)
-        
-        yh=ym+sigma/(y.shape[0]**0.5)
-        yb=ym-sigma/(y.shape[0]**0.5)
-        
-        #clear_plot(size)
-        
-        plt.plot(x/60,ym,linewidth=2,**plot_options)
-
-        plt.plot(x/60,yh,linewidth=0.05,**plot_options)
-        plt.plot(x/60,yb,linewidth=0.05,**plot_options)
-        plt.fill_between(x/60,yh,yb,alpha=0.2,**plot_options)
 #%% STACK VIEWER
 from qtpy.QtWidgets import QPushButton,QLabel,QComboBox,QFileDialog,QWidget,QMessageBox,QMainWindow,QVBoxLayout
-import magicgui
+import os
 
 class StackViewer(QWidget):
     def __init__(self,viewer):
@@ -335,7 +87,7 @@ class StackViewer(QWidget):
         #add the dropdown list to select the experiment
         self.list_exp=QComboBox(self)
         self.layout().addWidget(self.list_exp)
-        self.list_exp.currentTextChanged.connect(self.get_exp)
+        self.list_exp.currentTextChanged.connect(self.detail_exp)
         
         #add the dropdown button to select the cell 
         self.cell_nb=QComboBox(self.list_exp)
@@ -346,7 +98,7 @@ class StackViewer(QWidget):
         self.layout().addWidget(load)
         load.clicked.connect(self.display_exp)
         
-    #function to choose the directory and have the experiments in the folder displayed
+    '''function to choose the directory and have the experiments in the folder displayed'''
     def choose_exp(self):
         dbox = QFileDialog(self)
         dbox.setDirectory('F:/optorhoa')   
@@ -357,6 +109,15 @@ class StackViewer(QWidget):
              filenames=[f for f in os.listdir(folder_path) if f.endswith('.nd')]  
         self.list_exp.clear()
         self.list_exp.addItems(filenames)
+    
+    def detail_exp(self):
+        self.cell_nb.clear()
+        self.get_exp()
+        if self.exp:
+            self.cell_nb.addItems(list(map(str,range(1,self.exp.nbpos+1))))        
+        else:
+            print('no experiment was found')
+            return False
         
     def get_exp(self):
         try:
@@ -365,15 +126,10 @@ class StackViewer(QWidget):
         except:
             mess=QMessageBox(self)
             mess.setText('Unable to load experiment')
-            self.layout().addWidget(mess)
-        self.cell_nb.clear()
+            self.layout().addWidget(mess) 
         if self.exp:
-            self.cell_nb.addItems(list(map(str,range(1,self.exp.nbpos+1))))
-            print(self.cell_nb)
             return self.exp
-        else:
-            print('no experiment was found')
-            return False
+
         
     def display_exp(self):
         for layer in self.viewer.layers:
@@ -414,10 +170,39 @@ class StackViewer(QWidget):
 if __name__ == "__main__":
     w = StackViewer(viewer)
     
-    w.resize(300,300)
+    w.resize(100,50)
     w.setWindowTitle('Select experiment')
     w.show()
     viewer.window.add_dock_widget(w)
+
+#%%CROPER 
+''' you need to draw a rectangle, otherwise it dxoes something bizarre
+you need also to draw it in the not grid mode'''
+
+from magicgui import magicgui
+
+@magicgui(call_button='Crop')
+def crop(crop_zone:napari.layers.Shapes):
+    global inds_cropped_area
+    inds=[]
+    for i in np.array([crop_zone.data[0][0][1:],crop_zone.data[0][2][1:]]).T:
+        temp=[int(i[0]), int(i[1])]
+        temp.sort()
+        inds.append(slice(temp[0],temp[1]))
+    nblayer=len(viewer.layers)
+    inds_cropped_area=inds
+    for i,layer in enumerate(viewer.layers):
+        if layer._type_string=='image':
+            layer_name=layer.name
+            new_data=layer.data[:,inds[0],inds[1]]
+            layer.data=new_data
+    viewer.layers.remove(crop_zone)
+    viewer.reset_view()
+    viewer.grid.enabled=True   
+        
+if __name__ == "__main__":
+    viewer.window.add_dock_widget(crop)
+    
     
 #%% SEGMENTER
 
@@ -426,11 +211,13 @@ from scipy import ndimage
 from skimage import measure, filters
 import matplotlib.pyplot as plt
 
-def segment_threshold(img,thresh=1.0):
+def segment_threshold(img,thresh):#bg,init_median):
     #img=(img/2^8).astype(np.uint8)
+    ''' correct by the ratio betweent the mean fluorescence at the inital state and the one at the timepoint'''
+    #bleach_correction=(np.median(np.array(img[img>bg])))/(init_median)
     binary = img > thresh
     dil=ndimage.binary_dilation(binary,iterations=2)
-    filled=ndimage.binary_fill_holes(dil).astype(int)
+    filled=ndimage.binary_fill_holes(dil[0]).astype(int)
     label_img, cc_num = ndimage.label(filled)
     #CC = ndimage.find_objects(label_img)
     cc_areas = ndimage.sum(filled, label_img, range(cc_num+1))
@@ -452,19 +239,35 @@ def segment_threshold(img,thresh=1.0):
 #     ax.set_xticks([])
 #     ax.set_yticks([])
 # =============================================================================
-    return (label_img>0)*255#np.array(fig)>0
+    return (label_img[np.newaxis,:,:]>0)*255
+
+background_inds={'Top-left':tuple([slice(0,100),slice(0,100)]),
+            'Top-right':tuple([slice(0,100),slice(-101,-1)]),
+            'Bottom-left':tuple([slice(-101,-1),slice(0,100)]),
+            'bottom-right':tuple([slice(-101,-1),slice(-101,-1)])}
 
 @magicgui(call_button='Segment',
           coeff={"widget_type": "FloatSlider",'min':0.5, 'max': 1.5,'step':0.01},
+          background={"choices":list(background_inds.keys())},
           )
-def segment(data:napari.types.ImageData,coeff=1.0):
+def segment(data:napari.types.ImageData,
+            coeff=1.0,
+            background=list(background_inds.keys())[0],
+            ):
     med=filters.median(data[0])
     pre_thresh=filters.threshold_otsu(med)
+    '''' Find bacckground of first image and find the initial mean of the area that is fluorescent (superior than the background)'''
+    bg=int(np.mean(data[0][background_inds[background]]))
+    init_median=np.median(np.array(data[0][data[0]>bg]))
+    end_median=np.median(np.array(data[-1][data[-1]>bg]))
     #print(type(data))
     if type(data)==np.ndarray:
         print('np.ndarray, it cannot be segmented like this')
         data=da.from_array(data)
-    segmented = data.map_blocks(segment_threshold,coeff*pre_thresh)
+    '''Make a simple bleach correction by a ratio for the segmentation: not used for the moment'''
+    data_to_segment2=(data.T*(1+(end_median-init_median)/np.arange(1,len(data)+1))).T
+    
+    segmented = da.map_blocks(segment_threshold,data,thresh=coeff*pre_thresh)#bg=bg,init_median=init_median)
     #print(data[0])
     viewer.add_image(segmented,name='segmented',opacity=0.2)
 
@@ -493,7 +296,32 @@ def write_on_text_file(results,output):
         output.write('Background value: '+str(result.background)+' \n')
         output.write('Activated zone: '+str(result.act)+' \n')
         output.write('Not activated zone: '+str(result.notact)+' \n')
+        output.write('Area of the cell: '+str(result.whole_surf))
+        output.write('Area of the cell: '+str(result.act_surf))
         output.write('\n')
+
+def write_on_pd(results,output):
+    pdresult=pd.DataFrame(columns=['exp','time','prot','wl_ind','pos','startacq','act','notact','whole','whole_surf','act_surf','background','init_value'])
+    for result in results:
+        l=len(result.act)
+        new_datapoints=pd.DataFrame({'exp':[result.exp.name]*l,
+                       'time': (np.arange(int(-result.startacq),int(l-result.startacq)))*result.exp.wl[result.wl_ind].step,
+                       'prot':[result.prot]*l,
+                       'wl_ind':[result.exp.wl[result.wl_ind].name]*l,
+                       'pos':[result.pos]*l,
+                       'startacq':[result.startacq]*l,
+                       'act':result.act,
+                       'notact':result.notact,
+                       'whole':result.whole,
+                       'whole_surf':result.whole_surf,
+                       'act_surf':result.act_surf,
+                       'background':[result.background]*l,
+                       'init_value':np.mean(result.act[0:result.startacq+1]),
+            })
+        
+        pdresult=pd.concat([pdresult,new_datapoints],ignore_index = True,axis=0)    
+    pickle.dump(pdresult,output)
+
 
 def calculate_intandsurf(imgs,mask_seg,inds_mask_act):
     return []
@@ -510,7 +338,10 @@ def calculate_intensities(
         mask_act : napari.types.ShapesData,
         layers_meas=[exp_layers[0]],
         prot=False,
-        new_file=False):
+        new_file=False,
+        time_of_activation=0,
+        comments=''):
+    global inds_cropped_area
     ta=time.time()
     exp=w.get_exp()
     if not exp:
@@ -521,9 +352,16 @@ def calculate_intensities(
     print(layers_meas)
     wl_seg=next(i for i, v in enumerate(exp.wl) if v.name in segment.data.current_choice)
     stepseg=exp.wl[wl_seg].step      
-    '''find indice of the area where the activation was done'''
-    inds_mask_act=(tuple(slice(int(i[0]), int(i[1])) for i in np.array([mask_act[0][0][1:],mask_act[0][2][1:]]).T))
+    '''find indice of the area where the activation was done (it is a bit complicate, I didn't know how to simplify this) '''
+    inds=[]
+    for i in np.array([mask_act[0][0][1:],mask_act[0][2][1:]]).T:
+        print(i)
+        temp=[int(i[0]), int(i[1])]
+        temp.sort()
+        inds.append(slice(temp[0],temp[1]))
+    inds_mask_act=tuple(inds)
     tb=time.time()
+    
     '''this is what takes the longest time because it needs to do the segmentation'''
     try:
         mask_np=np.array(viewer.layers['segmented'].data)
@@ -531,14 +369,21 @@ def calculate_intensities(
         print('no layer named "segmented", you should create one')
         return
     for j,layer_meas in enumerate(layers_meas):
-        whole, act, notact=[],[],[]
+        whole, act, notact, wholesurfs, actsurfs=[],[],[],[],[]
         wl_meas=next(i for i, v in enumerate(exp.wl) if v.name==layer_meas.name)
         layer_meas_np=np.array(layer_meas.data)
         result=Result(exp,prot,wl_meas,pos)
+    
+        '''save areas of activation and areas of cropping inside the object result'''
+        result.inds_cropped_area=inds_cropped_area
+        result.inds_mask_act=inds_mask_act
+        result.startacq=time_of_activation
+        
         stepmeas=exp.wl[wl_meas].step
+        
         nb_img=int(exp.nbtime/stepmeas)
         #print(nb_img)
-
+        print(nb_img)
         for i in range(nb_img):
             '''define the good frame to take for each segmentation or activation'''
             timg=i*stepmeas
@@ -547,28 +392,32 @@ def calculate_intensities(
             '''take mask of segmentation'''
             mask_seg=mask_np[tseg,:,:]>0
             '''take values in current image'''
-            #print(time.time()-tb)
-            img=layer_meas_np[timg,:,:]
+            img=layer_meas_np[i,:,:]
             #print(time.time()-tb)
             #img=np.array(Image.open(exp.get_image_name(wl_meas,pos,timg)))
             '''calculate whole intensity'''
             whole_int=img[mask_seg].sum()
             '''calculate whole surface'''
             whole_surf=mask_seg.sum()
+            #print('whole surface of the cell in pixels : "+str(whole_surf))
             '''calculate the intensity in the area of activation'''
             act_int=(img[inds_mask_act][mask_seg[inds_mask_act]]).sum()
             '''calculate the area of activation'''
             act_surf=(mask_seg[inds_mask_act]).sum()
             if i==0:
-                background=np.mean(img[0:20,0:20])
+                background=np.mean(img[background_inds[segment.background.value]])
+            wholesurfs.append(whole_surf)
+            actsurfs.append(act_surf)
             whole.append(whole_int/whole_surf)
             notact.append((whole_int-act_int)/(whole_surf-act_surf))
             if act_surf==0:
+                print('the cell is outside the area of activation ')
                 act.append(0)
             else:
                 act.append(act_int/act_surf)
-        print(time.time()-tb)
-        result.whole, result.act, result.notact, result.background =whole,act,notact,background  
+        #print(time.time()-tb)
+        result.whole, result.act, result.notact, result.background=whole,act,notact,background
+        result.whole_surf,result.act_surf =wholesurfs,actsurfs
         #put into pd dataframe
     # =============================================================================
     #     current_resultpd=pd.DataFrame(np.array([npwhole,npact,npnotact]).transpose())
@@ -584,13 +433,17 @@ def calculate_intensities(
             with open('./results.pkl', 'rb') as output:
                 results=pickle.load(output)
             results.append(result)
+        ta=time.time()    
         with open('./results.pkl', 'wb') as output:
             pickle.dump(results, output, pickle.HIGHEST_PROTOCOL)
         with open('./results.txt','w') as output:
             write_on_text_file(results,output)
+        tb=print(time.time()-ta)
+        with open('./pdresults.pkl','wb') as output:
+            write_on_pd(results,output)
+        tb=print(time.time()-ta)
 
-
-
+    print('Done')
     
 if __name__ == "__main__":
     viewer.window.add_dock_widget(calculate_intensities)
@@ -610,26 +463,44 @@ def plot_values():
     with open('./results.pkl', 'rb') as output:
         results=pickle.load(output)
     #Result_array(results).plot()
-    fig=Figure()
-    canvas=FigureCanvas(fig)
-    ax=fig.add_subplot(111)
+    fig1=Figure()
+    canvas1=FigureCanvas(fig1)
+    ax=fig1.add_subplot(111)
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
     #ax.plot(results[0].act)
     for result in results:
-        result.plot(axes=ax,zone='notact',plot_options={'color':'red'})
+        #ax.plot(result.act,color='blue')
+        result.plot(axes=ax,zone='notact',plot_options={'color':'black'})
         result.plot(axes=ax,zone='act',plot_options={'color':'blue'})
+    viewer.window.add_dock_widget(canvas1)   
+    
+    fig2=Figure()
+    canvas2=FigureCanvas(fig2)
+    ax2=fig2.add_subplot(111)
+    ax2.spines['right'].set_visible(False)
+    ax2.spines['top'].set_visible(False)
+    #ax.plot(results[0].act)
+    for result in results:
+        ax2.plot(np.array(result.whole_surf)/result.whole_surf[0],color='green')
+        ax2.plot(np.array(result.act_surf)/result.act_surf[0],color='blue')
+        ax2.plot((np.array(result.whole_surf)-np.array(result.act_surf))/(result.whole_surf[0]-result.act_surf[0]),color='black')
+    viewer.window.add_dock_widget(canvas2)    
+    
 # =============================================================================
 #     for prot in [True,False]:
 #         for wl_name in [layer.name for layer in calculate_intensities.layers_meas.value]:
 #             Result_array(results).plot(axes=ax,plot_options={'color':'blue'},prot=prot)
 #             Result_array(results).plot(axes=ax,zone='notact',plot_options={'color':'red'},prot=prot)
+# =============================================================================    
 # =============================================================================
-    viewer.window.add_dock_widget(canvas)
-    
-# =============================================================================
-#     alt.Chart(df).mark_circle(size=60).encode(
-#         alt.X('a',scale=alt.Scale(type='log')),
-#         alt.Y('b',scale=alt.Scale(type='log')),
-#         ).interactive().show()
+#     df=pd.DataFrame({'x':np.arange(len(result.act)),
+#                     'y':np.array(result.whole_surf)/result.whole_surf[0]})
+#     a=alt.Chart(df)
+#     a.mark_line().encode(
+#         x='x',
+#         y='y'
+#         )
 # =============================================================================
 
 if __name__ == "__main__":
