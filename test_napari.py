@@ -46,17 +46,17 @@ def read_stack(filenames):
     return stack
 
 #create different layers
-filenames = sorted(glob(r"D:\optorhoa\201208_RPE_optoRhoA_PAKiRFP\cell2s_50msact_1_w2TIRF 561_t*.tif"),key=alphanumeric_key)
+filenames = sorted(glob(r"F:\optorhoa\201208_RPE_optoRhoA_PAKiRFP\cell2s_50msact_1_w2TIRF 561_t*.tif"),key=alphanumeric_key)
 stack=read_stack(filenames)
 viewer=napari.view_image(stack, contrast_limits=[0,2000],name='561')  
 viewer.layers[-1].reset_contrast_limits()
 
-filenames = sorted(glob(r"D:\optorhoa\201208_RPE_optoRhoA_PAKiRFP\cell2s_50msact_1_w3TIRF 642_t*.tif"),key=alphanumeric_key)
+filenames = sorted(glob(r"F:\optorhoa\201208_RPE_optoRhoA_PAKiRFP\cell2s_50msact_1_w3TIRF 642_t*.tif"),key=alphanumeric_key)
 stack=read_stack(filenames)
 viewer.add_image(stack, contrast_limits=[0,2000],name='642')  
 viewer.layers[-1].reset_contrast_limits()
 
-filenames = sorted(glob(r"D:\optorhoa\201208_RPE_optoRhoA_PAKiRFP\cell2s_50msact_1_w1TIRF DIC_t*.tif"),key=alphanumeric_key)
+filenames = sorted(glob(r"F:\optorhoa\201208_RPE_optoRhoA_PAKiRFP\cell2s_50msact_1_w1TIRF DIC_t*.tif"),key=alphanumeric_key)
 stack=read_stack(filenames)
 viewer.add_image(stack, contrast_limits=[199,200],name='DIC')  
 viewer.layers[-1].reset_contrast_limits()
@@ -204,87 +204,204 @@ if __name__ == "__main__":
     viewer.window.add_dock_widget(crop)
     
     
-#%% SEGMENTER
+# =============================================================================
+# #%% SEGMENTER
+# 
+# from magicgui import magicgui
+# from scipy import ndimage
+# from skimage import measure, filters
+# import matplotlib.pyplot as plt
+# 
+# def segment_threshold(img,thresh):#bg,init_median):
+#     #img=(img/2^8).astype(np.uint8)
+#     ''' correct by the ratio betweent the mean fluorescence at the inital state and the one at the timepoint'''
+#     #bleach_correction=(np.median(np.array(img[img>bg])))/(init_median)
+#     binary = img > thresh
+#     dil=ndimage.binary_dilation(binary,iterations=1)
+#     filled=ndimage.binary_fill_holes(dil[0]).astype(int)
+#     label_img, cc_num = ndimage.label(filled)
+#     #CC = ndimage.find_objects(label_img)
+#     cc_areas = ndimage.sum(filled, label_img, range(cc_num+1))
+#     area_mask = (cc_areas < max(cc_areas))
+#     label_img[area_mask[label_img]] = 0
+#     try:
+#         contours = measure.find_contours(label_img, 0.8)
+#     except:
+#         contours=[]
+#     if len(contours)>0:
+#         contour=contours[0]
+#     else:
+#         contour=np.array([None])
+#     #return (label_img>0)*255, contour
+# # =============================================================================
+# #     fig, ax = plt.subplots()
+# #     ax.imshow(img, cmap=plt.cm.gray)
+# #     ax.plot(contour[:, 1], contour[:, 0], linewidth=2)
+# #     ax.set_xticks([])
+# #     ax.set_yticks([])
+# # =============================================================================
+#     return (label_img[np.newaxis,:,:]>0)*255
+# 
+# background_inds={'Top-left':tuple([slice(0,100),slice(0,100)]),
+#             'Top-right':tuple([slice(0,100),slice(-101,-1)]),
+#             'Bottom-left':tuple([slice(-101,-1),slice(0,100)]),
+#             'bottom-right':tuple([slice(-101,-1),slice(-101,-1)])}
+# 
+# @magicgui(call_button='Segment',
+#           coeff={"widget_type": "FloatSlider",'min':0.5, 'max': 1.5,'step':0.01},
+#           background={"choices":list(background_inds.keys())},
+#           )
+# def segment(data:napari.types.ImageData,
+#             coeff=1.0,
+#             background=list(background_inds.keys())[0],
+#             ):
+#     med=filters.median(data[0])
+#     pre_thresh=filters.threshold_otsu(med)
+#     '''' Find bacckground of first image and find the initial mean of the area that is fluorescent (superior than the background)'''
+#     bg=int(np.mean(data[0][background_inds[background]]))
+#     init_median=np.median(np.array(data[0][data[0]>bg]))
+#     end_median=np.median(np.array(data[-1][data[-1]>bg]))
+#     #print(type(data))
+#     if type(data)==np.ndarray:
+#         print('np.ndarray, it cannot be segmented like this')
+#         data=da.from_array(data)
+#     '''Make a simple bleach correction by a ratio for the segmentation: not used for the moment'''
+#     data_to_segment2=(data.T*(1+(end_median-init_median)/np.arange(1,len(data)+1))).T
+#     
+#     segmented = da.map_blocks(segment_threshold,data,thresh=coeff*pre_thresh)#bg=bg,init_median=init_median)
+#     #print(data[0])
+#     viewer.add_image(segmented,name='segmented',opacity=0.2)
+# 
+# @segment.coeff.changed.connect
+# def change_seg(new_coeff:int):
+#     viewer.layers.remove('segmented')
+#     segment()
+# 
+# 
+# if __name__ == "__main__":
+#     viewer.window.add_dock_widget(segment)
+# 
+# =============================================================================
+#%% Segmentor optical flow
 
 from magicgui import magicgui
 from scipy import ndimage
-from skimage import measure, filters
 import matplotlib.pyplot as plt
+import cv2 
+from PIL import Image, ImageFilter
 
-def segment_threshold(img,thresh):#bg,init_median):
-    #img=(img/2^8).astype(np.uint8)
-    ''' correct by the ratio betweent the mean fluorescence at the inital state and the one at the timepoint'''
-    #bleach_correction=(np.median(np.array(img[img>bg])))/(init_median)
-    binary = img > thresh
-    dil=ndimage.binary_dilation(binary,iterations=1)
-    filled=ndimage.binary_fill_holes(dil[0]).astype(int)
-    label_img, cc_num = ndimage.label(filled)
-    #CC = ndimage.find_objects(label_img)
-    cc_areas = ndimage.sum(filled, label_img, range(cc_num+1))
-    area_mask = (cc_areas < max(cc_areas))
-    label_img[area_mask[label_img]] = 0
-    try:
-        contours = measure.find_contours(label_img, 0.8)
-    except:
-        contours=[]
-    if len(contours)>0:
-        contour=contours[0]
-    else:
-        contour=np.array([None])
-    #return (label_img>0)*255, contour
-# =============================================================================
-#     fig, ax = plt.subplots()
-#     ax.imshow(img, cmap=plt.cm.gray)
-#     ax.plot(contour[:, 1], contour[:, 0], linewidth=2)
-#     ax.set_xticks([])
-#     ax.set_yticks([])
-# =============================================================================
-    return (label_img[np.newaxis,:,:]>0)*255
 
-background_inds={'Top-left':tuple([slice(0,100),slice(0,100)]),
-            'Top-right':tuple([slice(0,100),slice(-101,-1)]),
-            'Bottom-left':tuple([slice(-101,-1),slice(0,100)]),
-            'bottom-right':tuple([slice(-101,-1),slice(-101,-1)])}
+def segment_opt(data,iterations,threshold,mina,maxa,medmag,maxmag,size_erosion,size_close):
+    
+    img1=np.float32(data[1])/np.max(data[0])
+    img2=np.float32(data[2])/np.max(data[1])
 
-@magicgui(call_button='Segment',
-          coeff={"widget_type": "FloatSlider",'min':0.5, 'max': 1.5,'step':0.01},
-          background={"choices":list(background_inds.keys())},
+    gauss1=cv2.GaussianBlur(img1,(51,51),cv2.BORDER_DEFAULT )
+    gauss2=cv2.GaussianBlur(img2,(51,51),cv2.BORDER_DEFAULT )
+    
+    img1=img1/gauss1
+    img2=img2/gauss2
+    #img1=(img1/gauss1-mina)/(maxa-mina)
+    #img2=(img2/gauss2-mina)/(maxa-mina)
+    #print('max(img1) is '+str(np.max(img1)))
+    #print('max(img1/gauss1) is '+str(np.max(img1/gauss1)))
+    #print('maxa is '+str(maxa))
+    #print('min(img1/gauss1) is '+str(np.min(img1/gauss1)))
+    #print('mina is '+str(mina))
+    img1=(img1-mina)/(maxa-mina)
+    img2=(img2-mina)/(maxa-mina)
+    
+    img1=(img1)*((img1)>0)*((img1)<1)
+    img2=(img2)*((img2)>0)*((img2)<1)
+    
+    flow=cv2.calcOpticalFlowFarneback(img1,img2,None,0.5,1,iterations,5,5,1.2,0)
+    mag, ang = cv2.cartToPolar(flow[..., 0], flow[..., 1])
+    
+    mag=((mag-medmag)/maxmag+1.0)
+    
+    #thresholding the optical flow
+    th=((mag>threshold*0.1)*255).astype('uint8')
+    ret, thresh = cv2.threshold(th.astype('uint8'),0.5, 255, 0)
+    
+    #erode stuff
+    kernel = np.ones((3,3), np.uint8)
+    
+    contours,a=cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
+    #sort contours by area
+    contours = sorted(contours, key=cv2.contourArea, reverse=True)
+    mask=np.zeros(img1.shape)
+    cv2.drawContours(mask,contours,0,(255,255,255),thickness=cv2.FILLED)  
+    
+    ret, thresh = cv2.threshold(mask.astype('uint8'),0.5, 255, 0)
+    closed=cv2.morphologyEx(thresh, cv2.MORPH_CLOSE,kernel,iterations=size_close) 
+    er=cv2.erode(closed,kernel,iterations=size_erosion)
+    smoothed=cv2.blur(er,(25,25))
+    
+    ret, thresh = cv2.threshold(smoothed.astype('uint8'),200, 255, 0)
+    contours,a=cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
+    contours = sorted(contours, key=cv2.contourArea, reverse=True)
+    mask=np.zeros(img1.shape)
+    cv2.drawContours(mask,contours,0,(10,10,10),thickness=cv2.FILLED)    
+    #mask2=np.zeros(img1.shape)
+    cv2.drawContours(mask,contours,0,(255,255,255),5) 
+    
+    
+    return np.array([mask]*3)#prev_img
+
+@magicgui(call_button='Segment optical flow',
           )
-def segment(data:napari.types.ImageData,
-            coeff=1.0,
-            background=list(background_inds.keys())[0],
+def segment_opticalflow(data:napari.types.ImageData,
+            threshold=2,
+            iterations=1,
+            size_erosion=0,
+            size_close=0
             ):
-    med=filters.median(data[0])
-    pre_thresh=filters.threshold_otsu(med)
-    '''' Find bacckground of first image and find the initial mean of the area that is fluorescent (superior than the background)'''
-    bg=int(np.mean(data[0][background_inds[background]]))
-    init_median=np.median(np.array(data[0][data[0]>bg]))
-    end_median=np.median(np.array(data[-1][data[-1]>bg]))
-    #print(type(data))
-    if type(data)==np.ndarray:
-        print('np.ndarray, it cannot be segmented like this')
-        data=da.from_array(data)
-    '''Make a simple bleach correction by a ratio for the segmentation: not used for the moment'''
-    data_to_segment2=(data.T*(1+(end_median-init_median)/np.arange(1,len(data)+1))).T
+    #calculate for the first frame to have the good normalization
+    img=np.float32(data[0])/np.max(np.array(data[0]))
+    gauss=cv2.GaussianBlur(img,(51,51),cv2.BORDER_DEFAULT)
+    flat=np.array(img/gauss).flatten()
+    flat.sort()
+    mina=np.mean(flat[0:int(len(flat)/1000)])
+    maxa=np.mean(flat[int(999*len(flat)/1000):])
+    img=(img/gauss-mina)/(img-maxa)
+    img1=np.float32(data[1])/np.max(np.array(data[0]))
+    gauss1=cv2.GaussianBlur(img1,(51,51),cv2.BORDER_DEFAULT)
+    img1=(img1/gauss1-mina)/(maxa-mina)
     
-    segmented = da.map_blocks(segment_threshold,data,thresh=coeff*pre_thresh)#bg=bg,init_median=init_median)
+    flow=cv2.calcOpticalFlowFarneback(img,img1,None,0.5,1,iterations,5,5,1.2,0)
+    mag, ang = cv2.cartToPolar(flow[..., 0], flow[..., 1])
+    flat=mag.flatten()
+    flat.sort()
+    medmag=np.median(flat)
+    maxmag=min(medmag-flat[0],flat[-1]-medmag)
+
+    segmented = da.map_overlap(segment_opt,data,depth={0: 1, 1: 0,2:0},boundary='reflect',iterations=iterations,threshold=threshold,mina=mina,maxa=maxa,medmag=medmag,maxmag=maxmag,size_erosion=size_erosion,size_close=size_close,dtype=img.dtype)#bg=bg,init_median=init_median)
     #print(data[0])
-    viewer.add_image(segmented,name='segmented',opacity=0.2)
+    viewer.add_image(segmented,name='segmented optical flow',opacity=0.2)
 
-@segment.coeff.changed.connect
-def change_seg(new_coeff:int):
-    viewer.layers.remove('segmented')
-    segment()
-
-
-if __name__ == "__main__":
-    viewer.window.add_dock_widget(segment)
+@segment_opticalflow.threshold.changed.connect
+def change_thresh(new_thresholE:int):
+    viewer.layers.remove('segmented optical flow')
+    segment_opticalflow()
+@segment_opticalflow.iterations.changed.connect
+def change_it(new_iterations:int):
+    viewer.layers.remove('segmented optical flow')
+    segment_opticalflow()
+@segment_opticalflow.size_erosion.changed.connect
+def change_er(new_size_erosion:int):
+    viewer.layers.remove('segmented optical flow')
+    segment_opticalflow()
+@segment_opticalflow.size_close.changed.connect
+def change_close(new_size_close:int):
+    viewer.layers.remove('segmented optical flow')
+    segment_opticalflow()
     
+if __name__ == "__main__":
+    viewer.window.add_dock_widget(segment_opticalflow)
 #%% Intensity calculator
 import pandas as pd
 import pickle
 import time
-from magicgui.widgets import Label
 
 def write_on_text_file(results,output):
     output.write('Number of datas : '+str(len(results))+' \n')
@@ -374,7 +491,7 @@ def calculate_intensities(
     
     '''this is what takes the longest time because it needs to do the segmentation'''
     try:
-        mask_np=np.array(mask.data)
+        mask_np=np.array(mask.data==10)
     except:
         print('no layer named "mask" selected')
         return
@@ -462,249 +579,30 @@ def calculate_intensities(
 if __name__ == "__main__":
     viewer.window.add_dock_widget(calculate_intensities)
 
-# =============================================================================
-# #%% Segmentor optical flow
-# 
-# from magicgui import magicgui
-# from scipy import ndimage
-# import matplotlib.pyplot as plt
-# import cv2 
-# 
-# def segment_opt(prev_img,next_img,iterations,threshold,mina,maxa,size_erosion,size_dilation):
-#     img1=np.float32(prev_img[0])
-#     img2=np.float32(next_img[0])
-#     #img1=((prev_img[0]-mina)/(maxa-mina))
-#     #img2=((next_img[0]-mina)/(maxa-mina))
-#     gauss1=cv2.GaussianBlur(img1,(31,31),cv2.BORDER_DEFAULT )
-#     gauss2=cv2.GaussianBlur(img2,(31,31),cv2.BORDER_DEFAULT )
-#     
-#     img1=(img1/gauss1-mina)/(maxa-mina)
-#     img2=(img2/gauss2-mina)/(maxa-mina)
-#     #print('max(img1) is '+str(np.max(img1)))
-#     #print('max(img1/gauss1) is '+str(np.max(img1/gauss1)))
-#     #print('maxa is '+str(maxa))
-#     #print('min(img1/gauss1) is '+str(np.min(img1/gauss1)))
-#     #print('mina is '+str(mina))
-#     img1=(img1)*((img1)>0)*((img1)<1)
-#     img2=(img2)*((img2)>0)*((img2)<1)
-#     
-#     flow=cv2.calcOpticalFlowFarneback(img1,img2,None,0.5,1,iterations,5,5,1.2,0)
-#     mag, ang = cv2.cartToPolar(flow[..., 0], flow[..., 1])
-#     flat=mag.flatten()
-#     flat.sort()
-#     
-#     minamag=flat[0]#np.mean(flat[0:int(len(flat)/10)])
-#     maxamag=np.mean(flat[int(5*len(flat)/10):])
-#     
-#     mag=(255*255*(mag-minamag)/(maxamag-minamag))
-#     
-#     #thresholding the optical flow
-#     th=((mag>threshold)*255).astype('uint8')
-#     ret, thresh = cv2.threshold(th.astype('uint8'),0.5, 255, 0)
-#     
-#     #erode stuff
-#     kernel = np.ones((5,5), np.uint8)
-#     #closed=cv2.morphologyEx(thresh, cv2.MORPH_CLOSE,kernel)
-#     #opened=cv2.morphologyEx(closed, cv2.MORPH_OPEN,kernel)
-#     er=cv2.erode(thresh,kernel)
-#     
-#     
-#     kernel = np.ones((size_dilation, size_dilation), np.uint8)
-#     dilate=cv2.dilate(er,kernel)
-#     kernel = np.ones((size_erosion, size_erosion), np.uint8)
-#     erode=cv2.erode(dilate, kernel, cv2.BORDER_REFLECT)
-#     
-#     contours,a=cv2.findContours(erode, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
-#     #sort contours by area
-#     contours = sorted(contours, key=cv2.contourArea, reverse=True)
-#     mask=np.zeros(img1.shape)
-#     cv2.drawContours(mask,contours,0,(255,255,255),thickness=cv2.FILLED)  
-#     #mag[mag>255]=255
-#     #mag=(mag*(mag>0)).astype('uint8')
-#     #ret, thresh = cv2.threshold(mag,threshold, 255, 0)
-#     #contours,a=cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
-#     #cv2.drawContours(img1,contours,-1,(0,255,0),3)    
-#     return np.array([mask])>0#prev_img
-# 
-# @magicgui(call_button='Segment optical flow',
-#           )
-# def segment_opticalflow(data:napari.types.ImageData,
-#             threshold=2,
-#             iterations=20,
-#             size_erosion=30,
-#             size_dilation=5
-#             ):
-#     img1=np.array(data[0])
-#     gauss=cv2.GaussianBlur(img1,(31,31),cv2.BORDER_DEFAULT )
-#     flat=np.array(img1/gauss).flatten()
-#     
-#     flat.sort()
-#     #print('len(flat)/1000 is '+str(int(len(flat)/1000)))
-#     mina=np.mean(flat[0:int(len(flat)/1000)])
-#     maxa=np.mean(flat[int(999*len(flat)/1000):])
-# 
-#     segmented = da.map_blocks(segment_opt,data,np.roll(data,1),iterations,threshold,mina,maxa,size_erosion,size_dilation)#bg=bg,init_median=init_median)
-#     #print(data[0])
-#     viewer.add_image(segmented,name='segmented optical flow',opacity=0.2)
-# 
-# @segment_opticalflow.threshold.changed.connect
-# def change_thresh(new_threshold:int):
-#     viewer.layers.remove('segmented optical flow')
-#     segment_opticalflow()
-# @segment_opticalflow.iterations.changed.connect
-# def change_it(new_iterations:int):
-#     viewer.layers.remove('segmented optical flow')
-#     segment_opticalflow()
-# @segment_opticalflow.size_erosion.changed.connect
-# def change_er(new_size_erosion:int):
-#     viewer.layers.remove('segmented optical flow')
-#     segment_opticalflow()
-# @segment_opticalflow.size_dilation.changed.connect
-# def change_dil(new_size_dilation:int):
-#     viewer.layers.remove('segmented optical flow')
-#     segment_opticalflow()
-# 
-# if __name__ == "__main__":
-#     viewer.window.add_dock_widget(segment_opticalflow)
-# 
-# =============================================================================
-#%% Segmentor optical flow
 
-from magicgui import magicgui
-from scipy import ndimage
-import matplotlib.pyplot as plt
-import cv2 
-from PIL import Image, ImageFilter
-
-
-def segment_opt(data,iterations,threshold,mina,maxa,medmag,maxmag,size_erosion,size_close):
-    
-    img1=np.float32(data[1])/np.max(data[0])
-    img2=np.float32(data[2])/np.max(data[1])
-
-    gauss1=cv2.GaussianBlur(img1,(51,51),cv2.BORDER_DEFAULT )
-    gauss2=cv2.GaussianBlur(img2,(51,51),cv2.BORDER_DEFAULT )
-    
-    img1=img1/gauss1
-    img2=img2/gauss2
-    #img1=(img1/gauss1-mina)/(maxa-mina)
-    #img2=(img2/gauss2-mina)/(maxa-mina)
-    #print('max(img1) is '+str(np.max(img1)))
-    #print('max(img1/gauss1) is '+str(np.max(img1/gauss1)))
-    #print('maxa is '+str(maxa))
-    #print('min(img1/gauss1) is '+str(np.min(img1/gauss1)))
-    #print('mina is '+str(mina))
-    img1=(img1-mina)/(maxa-mina)
-    img2=(img2-mina)/(maxa-mina)
-    
-    img1=(img1)*((img1)>0)*((img1)<1)
-    img2=(img2)*((img2)>0)*((img2)<1)
-    
-    flow=cv2.calcOpticalFlowFarneback(img1,img2,None,0.5,1,iterations,5,5,1.2,0)
-    mag, ang = cv2.cartToPolar(flow[..., 0], flow[..., 1])
-    
-    mag=((mag-medmag)/maxmag+1.0)
-    
-    #thresholding the optical flow
-    th=((mag>threshold)*255).astype('uint8')
-    ret, thresh = cv2.threshold(th.astype('uint8'),0.5, 255, 0)
-    
-    #erode stuff
-    kernel = np.ones((3,3), np.uint8)
-    
-    contours,a=cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
-    #sort contours by area
-    contours = sorted(contours, key=cv2.contourArea, reverse=True)
-    mask=np.zeros(img1.shape)
-    cv2.drawContours(mask,contours,0,(255,255,255),thickness=cv2.FILLED)  
-    
-    ret, thresh = cv2.threshold(mask.astype('uint8'),0.5, 255, 0)
-    closed=cv2.morphologyEx(thresh, cv2.MORPH_CLOSE,kernel,iterations=size_close) 
-    er=cv2.erode(closed,kernel,iterations=size_erosion)
-    smoothed=cv2.blur(er,(25,25))
-    
-    ret, thresh = cv2.threshold(smoothed.astype('uint8'),200, 255, 0)
-    contours,a=cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
-    contours = sorted(contours, key=cv2.contourArea, reverse=True)
-    mask=np.zeros(img1.shape)
-    cv2.drawContours(mask,contours,0,(0,0,0),thickness=cv2.FILLED)    
-    #mask2=np.zeros(img1.shape)
-    cv2.drawContours(mask,contours,0,(255,255,255),5) 
-    
-    
-    return np.array([mask]*3)#prev_img
-
-@magicgui(call_button='Segment optical flow',
-          )
-def segment_opticalflow(data:napari.types.ImageData,
-            threshold=2,
-            iterations=1,
-            size_erosion=0,
-            size_close=0
-            ):
-    #calculate for the first frame to have the good normalization
-    img=np.float32(data[0])/np.max(np.array(data[0]))
-    gauss=cv2.GaussianBlur(img,(51,51),cv2.BORDER_DEFAULT)
-    flat=np.array(img/gauss).flatten()
-    flat.sort()
-    mina=np.mean(flat[0:int(len(flat)/1000)])
-    maxa=np.mean(flat[int(999*len(flat)/1000):])
-    img=(img/gauss-mina)/(img-maxa)
-    img1=np.float32(data[1])/np.max(np.array(data[0]))
-    gauss1=cv2.GaussianBlur(img1,(51,51),cv2.BORDER_DEFAULT)
-    img1=(img1/gauss1-mina)/(maxa-mina)
-    
-    flow=cv2.calcOpticalFlowFarneback(img,img1,None,0.5,1,iterations,5,5,1.2,0)
-    mag, ang = cv2.cartToPolar(flow[..., 0], flow[..., 1])
-    flat=mag.flatten()
-    flat.sort()
-    medmag=np.median(flat)
-    maxmag=min(medmag-flat[0],flat[-1]-medmag)
-
-    segmented = da.map_overlap(segment_opt,data,depth={0: 1, 1: 0,2:0},boundary='reflect',iterations=iterations,threshold=threshold,mina=mina,maxa=maxa,medmag=medmag,maxmag=maxmag,size_erosion=size_erosion,size_close=size_close,dtype=img.dtype)#bg=bg,init_median=init_median)
-    #print(data[0])
-    viewer.add_image(segmented,name='segmented optical flow',opacity=0.2)
-
-@segment_opticalflow.threshold.changed.connect
-def change_thresh(new_threshold:int):
-    viewer.layers.remove('segmented optical flow')
-    segment_opticalflow()
-@segment_opticalflow.iterations.changed.connect
-def change_it(new_iterations:int):
-    viewer.layers.remove('segmented optical flow')
-    segment_opticalflow()
-@segment_opticalflow.size_erosion.changed.connect
-def change_er(new_size_erosion:int):
-    viewer.layers.remove('segmented optical flow')
-    segment_opticalflow()
-@segment_opticalflow.size_close.changed.connect
-def change_close(new_size_close:int):
-    viewer.layers.remove('segmented optical flow')
-    segment_opticalflow()
-    
-if __name__ == "__main__":
-    viewer.window.add_dock_widget(segment_opticalflow)
 #%%
 
-def tm(img1):
-    #list_img=[img1,img2,img3]
-    #mean=np.mean([img[0] for img in list_img],axis=0)>0.5
-    #print(img1.shape)
-    #print(np.array(3*[np.mean(img1,axis=0)]).shape)
-    return np.array(3*[np.mean(img1,axis=0)])>np.max(img1)/2#mean>np.max(mean)/3
-
-@magicgui(call_button='temporal mean',
-          )
-def temp_mean(data:napari.types.ImageData,
-            range_mean=3,):
-    #print(np.max(np.array(data[0])))
-    #print(data)
-    mean_test=da.map_overlap(tm,data,depth={0: 1, 1: 0,2:0},boundary=0,dtype=np.array(data[0]).dtype)
-    #print('shape of mean_test is '+str(mean_test.shape))
-    viewer.add_image(mean_test.compute(),name='temporal mean',opacity=0.2)    
-        
-if __name__ == "__main__":
-    viewer.window.add_dock_widget(temp_mean)
+# =============================================================================
+# def tm(img1):
+#     #list_img=[img1,img2,img3]
+#     #mean=np.mean([img[0] for img in list_img],axis=0)>0.5
+#     #print(img1.shape)
+#     #print(np.array(3*[np.mean(img1,axis=0)]).shape)
+#     return np.array(3*[np.mean(img1,axis=0)])>np.max(img1)/2#mean>np.max(mean)/3
+# 
+# @magicgui(call_button='temporal mean',
+#           )
+# def temp_mean(data:napari.types.ImageData,
+#             range_mean=3,):
+#     #print(np.max(np.array(data[0])))
+#     #print(data)
+#     mean_test=da.map_overlap(tm,data,depth={0: 1, 1: 0,2:0},boundary=0,dtype=np.array(data[0]).dtype)
+#     #print('shape of mean_test is '+str(mean_test.shape))
+#     viewer.add_image(mean_test.compute(),name='temporal mean',opacity=0.2)    
+#         
+# if __name__ == "__main__":
+#     viewer.window.add_dock_widget(temp_mean)
+# =============================================================================
  #%%   
     
 # =============================================================================
