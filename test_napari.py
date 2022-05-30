@@ -17,16 +17,14 @@ Created on Mon Jul  5 16:37:42 2021
 #%% open default file
 
 import napari
-#from dask_image.imread import imread
 from glob import glob
 from skimage.io import imread
 from skimage.io.collection import alphanumeric_key
 from dask import delayed
 import dask.array as da
-#import dask_image
 import numpy as np
 import exifread
-from common import WL,Exp,get_exp,Result,Result_array
+from common import get_exp,Result,Exp
 
 inds_cropped_area=[]
 
@@ -93,10 +91,13 @@ class StackViewer(QWidget):
         self.cell_nb=QComboBox(self.list_exp)
         self.layout().addWidget(self.cell_nb)
         
+        #button to launch the loading of the experiment
         load=QPushButton(self)
         load.setText('Load experiment')
         self.layout().addWidget(load)
         load.clicked.connect(self.display_exp)
+        
+        
         
     '''function to choose the directory and have the experiments in the folder displayed'''
     def choose_exp(self):
@@ -132,12 +133,15 @@ class StackViewer(QWidget):
 
         
     def display_exp(self):
+        #if he finds a shape layer, he keeps it
         for layer in self.viewer.layers:
             if type(layer)==napari.layers.shapes.shapes.Shapes:
                 shape=layer
+                
+        #clear all layers
         self.viewer.layers.clear()
+        
         try:
-            print('ok')
             self.viewer.add_layer(shape)
         except:
             pass
@@ -152,7 +156,6 @@ class StackViewer(QWidget):
             if self.exp.stacks:
                 filename=self.exp.get_stack_name(i,pos)
                 #print(filename)
-                lazy_imread = delayed(imread)
                 self.viewer.add_image(imread(filename),name=self.exp.wl[i].name)
 
             else:
@@ -204,84 +207,82 @@ if __name__ == "__main__":
     viewer.window.add_dock_widget(crop)
     
     
+#%% SEGMENTER
+
+from magicgui import magicgui
+from scipy import ndimage
+from skimage import measure, filters
+import matplotlib.pyplot as plt
+
+def segment_threshold(img,thresh):#bg,init_median):
+    #img=(img/2^8).astype(np.uint8)
+    ''' correct by the ratio betweent the mean fluorescence at the inital state and the one at the timepoint'''
+    #bleach_correction=(np.median(np.array(img[img>bg])))/(init_median)
+    binary = img > thresh
+    dil=ndimage.binary_dilation(binary,iterations=1)
+    filled=ndimage.binary_fill_holes(dil[0]).astype(int)
+    label_img, cc_num = ndimage.label(filled)
+    #CC = ndimage.find_objects(label_img)
+    cc_areas = ndimage.sum(filled, label_img, range(cc_num+1))
+    area_mask = (cc_areas < max(cc_areas))
+    label_img[area_mask[label_img]] = 0
+    try:
+        contours = measure.find_contours(label_img, 0.8)
+    except:
+        contours=[]
+    if len(contours)>0:
+        contour=contours[0]
+    else:
+        contour=np.array([None])
+    #return (label_img>0)*255, contour
 # =============================================================================
-# #%% SEGMENTER
-# 
-# from magicgui import magicgui
-# from scipy import ndimage
-# from skimage import measure, filters
-# import matplotlib.pyplot as plt
-# 
-# def segment_threshold(img,thresh):#bg,init_median):
-#     #img=(img/2^8).astype(np.uint8)
-#     ''' correct by the ratio betweent the mean fluorescence at the inital state and the one at the timepoint'''
-#     #bleach_correction=(np.median(np.array(img[img>bg])))/(init_median)
-#     binary = img > thresh
-#     dil=ndimage.binary_dilation(binary,iterations=1)
-#     filled=ndimage.binary_fill_holes(dil[0]).astype(int)
-#     label_img, cc_num = ndimage.label(filled)
-#     #CC = ndimage.find_objects(label_img)
-#     cc_areas = ndimage.sum(filled, label_img, range(cc_num+1))
-#     area_mask = (cc_areas < max(cc_areas))
-#     label_img[area_mask[label_img]] = 0
-#     try:
-#         contours = measure.find_contours(label_img, 0.8)
-#     except:
-#         contours=[]
-#     if len(contours)>0:
-#         contour=contours[0]
-#     else:
-#         contour=np.array([None])
-#     #return (label_img>0)*255, contour
-# # =============================================================================
-# #     fig, ax = plt.subplots()
-# #     ax.imshow(img, cmap=plt.cm.gray)
-# #     ax.plot(contour[:, 1], contour[:, 0], linewidth=2)
-# #     ax.set_xticks([])
-# #     ax.set_yticks([])
-# # =============================================================================
-#     return (label_img[np.newaxis,:,:]>0)*255
-# 
-# background_inds={'Top-left':tuple([slice(0,100),slice(0,100)]),
-#             'Top-right':tuple([slice(0,100),slice(-101,-1)]),
-#             'Bottom-left':tuple([slice(-101,-1),slice(0,100)]),
-#             'bottom-right':tuple([slice(-101,-1),slice(-101,-1)])}
-# 
-# @magicgui(call_button='Segment',
-#           coeff={"widget_type": "FloatSlider",'min':0.5, 'max': 1.5,'step':0.01},
-#           background={"choices":list(background_inds.keys())},
-#           )
-# def segment(data:napari.types.ImageData,
-#             coeff=1.0,
-#             background=list(background_inds.keys())[0],
-#             ):
-#     med=filters.median(data[0])
-#     pre_thresh=filters.threshold_otsu(med)
-#     '''' Find bacckground of first image and find the initial mean of the area that is fluorescent (superior than the background)'''
-#     bg=int(np.mean(data[0][background_inds[background]]))
-#     init_median=np.median(np.array(data[0][data[0]>bg]))
-#     end_median=np.median(np.array(data[-1][data[-1]>bg]))
-#     #print(type(data))
-#     if type(data)==np.ndarray:
-#         print('np.ndarray, it cannot be segmented like this')
-#         data=da.from_array(data)
-#     '''Make a simple bleach correction by a ratio for the segmentation: not used for the moment'''
-#     data_to_segment2=(data.T*(1+(end_median-init_median)/np.arange(1,len(data)+1))).T
-#     
-#     segmented = da.map_blocks(segment_threshold,data,thresh=coeff*pre_thresh)#bg=bg,init_median=init_median)
-#     #print(data[0])
-#     viewer.add_image(segmented,name='segmented',opacity=0.2)
-# 
-# @segment.coeff.changed.connect
-# def change_seg(new_coeff:int):
-#     viewer.layers.remove('segmented')
-#     segment()
-# 
-# 
-# if __name__ == "__main__":
-#     viewer.window.add_dock_widget(segment)
-# 
+#     fig, ax = plt.subplots()
+#     ax.imshow(img, cmap=plt.cm.gray)
+#     ax.plot(contour[:, 1], contour[:, 0], linewidth=2)
+#     ax.set_xticks([])
+#     ax.set_yticks([])
 # =============================================================================
+    return (label_img[np.newaxis,:,:]>0)*255
+
+background_inds={'Top-left':tuple([slice(0,100),slice(0,100)]),
+            'Top-right':tuple([slice(0,100),slice(-101,-1)]),
+            'Bottom-left':tuple([slice(-101,-1),slice(0,100)]),
+            'bottom-right':tuple([slice(-101,-1),slice(-101,-1)])}
+
+@magicgui(call_button='Segment',
+          coeff={"widget_type": "FloatSlider",'min':0.5, 'max': 1.5,'step':0.01},
+          background={"choices":list(background_inds.keys())},
+          )
+def segment(data:napari.types.ImageData,
+            coeff=1.0,
+            background=list(background_inds.keys())[0],
+            ):
+    med=filters.median(data[0])
+    pre_thresh=filters.threshold_otsu(med)
+    '''' Find bacckground of first image and find the initial mean of the area that is fluorescent (superior than the background)'''
+    bg=int(np.mean(data[0][background_inds[background]]))
+    init_median=np.median(np.array(data[0][data[0]>bg]))
+    end_median=np.median(np.array(data[-1][data[-1]>bg]))
+    #print(type(data))
+    if type(data)==np.ndarray:
+        print('np.ndarray, it cannot be segmented like this')
+        data=da.from_array(data)
+    '''Make a simple bleach correction by a ratio for the segmentation: not used for the moment'''
+    data_to_segment2=(data.T*(1+(end_median-init_median)/np.arange(1,len(data)+1))).T
+    
+    segmented = da.map_blocks(segment_threshold,data,thresh=coeff*pre_thresh)#bg=bg,init_median=init_median)
+    #print(data[0])
+    viewer.add_image(segmented,name='segmented',opacity=0.2)
+
+@segment.coeff.changed.connect
+def change_seg(new_coeff:int):
+    viewer.layers.remove('segmented')
+    segment()
+
+
+if __name__ == "__main__":
+    viewer.window.add_dock_widget(segment)
+
 #%% Segmentor optical flow
 
 from magicgui import magicgui
@@ -491,7 +492,7 @@ def calculate_intensities(
     
     '''this is what takes the longest time because it needs to do the segmentation'''
     try:
-        mask_np=np.array(mask.data==10)
+        mask_np=np.array(mask.data>0)#==10)
     except:
         print('no layer named "mask" selected')
         return
