@@ -44,17 +44,17 @@ def read_stack(filenames):
     return stack
 
 #create different layers
-filenames = sorted(glob(r"F:\optorhoa\201208_RPE_optoRhoA_PAKiRFP\cell2s_50msact_1_w2TIRF 561_t*.tif"),key=alphanumeric_key)
+filenames = sorted(glob(r"G:\optorhoa\201208_RPE_optoRhoA_PAKiRFP\cell2s_50msact_1_w2TIRF 561_t*.tif"),key=alphanumeric_key)
 stack=read_stack(filenames)
 viewer=napari.view_image(stack, contrast_limits=[0,2000],name='561')  
 viewer.layers[-1].reset_contrast_limits()
 
-filenames = sorted(glob(r"F:\optorhoa\201208_RPE_optoRhoA_PAKiRFP\cell2s_50msact_1_w3TIRF 642_t*.tif"),key=alphanumeric_key)
+filenames = sorted(glob(r"G:\optorhoa\201208_RPE_optoRhoA_PAKiRFP\cell2s_50msact_1_w3TIRF 642_t*.tif"),key=alphanumeric_key)
 stack=read_stack(filenames)
 viewer.add_image(stack, contrast_limits=[0,2000],name='642')  
 viewer.layers[-1].reset_contrast_limits()
 
-filenames = sorted(glob(r"F:\optorhoa\201208_RPE_optoRhoA_PAKiRFP\cell2s_50msact_1_w1TIRF DIC_t*.tif"),key=alphanumeric_key)
+filenames = sorted(glob(r"G:\optorhoa\201208_RPE_optoRhoA_PAKiRFP\cell2s_50msact_1_w1TIRF DIC_t*.tif"),key=alphanumeric_key)
 stack=read_stack(filenames)
 viewer.add_image(stack, contrast_limits=[199,200],name='DIC')  
 viewer.layers[-1].reset_contrast_limits()
@@ -63,7 +63,7 @@ viewer.reset_view()
 viewer.grid.enabled=True
 
 #%% STACK VIEWER
-from qtpy.QtWidgets import QPushButton,QLabel,QComboBox,QFileDialog,QWidget,QMessageBox,QMainWindow,QVBoxLayout
+from qtpy.QtWidgets import QPushButton,QLabel,QComboBox,QFileDialog,QWidget,QMessageBox,QMainWindow,QVBoxLayout,QCheckBox
 import os
 
 class StackViewer(QWidget):
@@ -90,6 +90,11 @@ class StackViewer(QWidget):
         #add the dropdown button to select the cell 
         self.cell_nb=QComboBox(self.list_exp)
         self.layout().addWidget(self.cell_nb)
+        
+        #button to decide whether you keep the layers or not
+        self.del_layers=QCheckBox()
+        self.del_layers.setText('Keep layers')
+        self.layout().addWidget(self.del_layers)
         
         #button to launch the loading of the experiment
         load=QPushButton(self)
@@ -139,7 +144,8 @@ class StackViewer(QWidget):
                 shape=layer
                 
         #clear all layers
-        self.viewer.layers.clear()
+        if self.del_layers.checkState()==0:
+            self.viewer.layers.clear()
         
         try:
             self.viewer.add_layer(shape)
@@ -346,6 +352,8 @@ def segment_opt(data,iterations,threshold,mina,maxa,medmag,maxmag,size_erosion,s
     #mask2=np.zeros(img1.shape)
     cv2.drawContours(mask,contours,0,(255,255,255),5) 
     
+    if False:
+        mask=segment_threshold(np.array([data[0]]),thresh=1)
     
     return np.array([mask]*3)#prev_img
 
@@ -580,518 +588,3 @@ def calculate_intensities(
 if __name__ == "__main__":
     viewer.window.add_dock_widget(calculate_intensities)
 
-
-#%%
-
-# =============================================================================
-# def tm(img1):
-#     #list_img=[img1,img2,img3]
-#     #mean=np.mean([img[0] for img in list_img],axis=0)>0.5
-#     #print(img1.shape)
-#     #print(np.array(3*[np.mean(img1,axis=0)]).shape)
-#     return np.array(3*[np.mean(img1,axis=0)])>np.max(img1)/2#mean>np.max(mean)/3
-# 
-# @magicgui(call_button='temporal mean',
-#           )
-# def temp_mean(data:napari.types.ImageData,
-#             range_mean=3,):
-#     #print(np.max(np.array(data[0])))
-#     #print(data)
-#     mean_test=da.map_overlap(tm,data,depth={0: 1, 1: 0,2:0},boundary=0,dtype=np.array(data[0]).dtype)
-#     #print('shape of mean_test is '+str(mean_test.shape))
-#     viewer.add_image(mean_test.compute(),name='temporal mean',opacity=0.2)    
-#         
-# if __name__ == "__main__":
-#     viewer.window.add_dock_widget(temp_mean)
-# =============================================================================
- #%%   
-    
-# =============================================================================
-# #%% PLOT VALUES
-# from matplotlib.figure import Figure
-# from matplotlib.backends.backend_qt5agg import FigureCanvas
-# import altair as alt
-# import pandas as pd
-# 
-# df=pd.DataFrame([[1,2],[4,5]],columns=['a','b'])
-# 
-# @magicgui(call_button='Plot values')
-# def plot_values():
-#     with open('./results.pkl', 'rb') as output:
-#         results=pickle.load(output)
-#     #Result_array(results).plot()
-#     fig1=Figure()
-#     canvas1=FigureCanvas(fig1)
-#     ax=fig1.add_subplot(111)
-#     ax.spines['right'].set_visible(False)
-#     ax.spines['top'].set_visible(False)
-#     #ax.plot(results[0].act)
-#     for result in results:
-#         #ax.plot(result.act,color='blue')
-#         result.plot(axes=ax,zone='notact',plot_options={'color':'black'})
-#         result.plot(axes=ax,zone='act',plot_options={'color':'blue'})
-#     viewer.window.add_dock_widget(canvas1)   
-#     
-#     fig2=Figure()
-#     canvas2=FigureCanvas(fig2)
-#     ax2=fig2.add_subplot(111)
-#     ax2.spines['right'].set_visible(False)
-#     ax2.spines['top'].set_visible(False)
-#     #ax.plot(results[0].act)
-#     for result in results:
-#         ax2.plot(np.array(result.whole_surf)/result.whole_surf[0],color='green')
-#         ax2.plot(np.array(result.act_surf)/result.act_surf[0],color='blue')
-#         ax2.plot((np.array(result.whole_surf)-np.array(result.act_surf))/(result.whole_surf[0]-result.act_surf[0]),color='black')
-#     viewer.window.add_dock_widget(canvas2)    
-#     
-# # =============================================================================
-# #     for prot in [True,False]:
-# #         for wl_name in [layer.name for layer in calculate_intensities.layers_meas.value]:
-# #             Result_array(results).plot(axes=ax,plot_options={'color':'blue'},prot=prot)
-# #             Result_array(results).plot(axes=ax,zone='notact',plot_options={'color':'red'},prot=prot)
-# # =============================================================================    
-# # =============================================================================
-# #     df=pd.DataFrame({'x':np.arange(len(result.act)),
-# #                     'y':np.array(result.whole_surf)/result.whole_surf[0]})
-# #     a=alt.Chart(df)
-# #     a.mark_line().encode(
-# #         x='x',
-# #         y='y'
-# #         )
-# # =============================================================================
-# 
-# if __name__ == "__main__":
-#     viewer.window.add_dock_widget(plot_values)
-# =============================================================================
-#%%
-# =============================================================================
-# 
-# from magicgui import magicgui
-# import os
-# import pathlib
-# from skimage.io import imread
-# from skimage.io.collection import alphanumeric_key
-# from dask import delayed
-# from magicgui import widgets
-# 
-# @magicgui(foldername={"mode": "d"},
-#           call_button='Load experiment',
-#           )
-# def folder_picker(foldername=pathlib.Path(r"F:/optorhoa")):
-#     
-#     print('Experiment loaded')
-#     filepath=os.path.join(folder_picker.foldername.value,folder_picker.filename.value)
-#     try:
-#         exp=get_exp(filepath)
-#     except:
-#         print('unable to load experiment')
-#     if expnumber==-1:
-#         print('choose a valid experiment number')
-#     elif exp:
-#         #print("experiment loaded :"+str(filepath))
-#         viewer.layers.clear()
-#         for i in range(len(exp.wl)):
-#             if exp.stacks:
-#                 stackname=exp.get_stack_name(i,expnumber)
-#                 viewer.add_image(imread(stackname),name=exp.wl[i].name)
-#             else:
-#                 files=sorted(glob(exp.get_image_name(i,expnumber,'*')),key=alphanumeric_key)
-#                 #print(files)
-#                 stack=read_stack(files)
-#                 viewer.add_image(stack,contrast_limits=[0,2000],name=exp.wl[i].name)
-#                 #set contrast limits automatically
-#                 viewer.layers[-1].reset_contrast_limits()    
-#         viewer.reset_view()
-#         viewer.grid.enabled=True    
-#     else:
-#         print('errooor')
-# 
-# #when the folder name changes, we need to change the list of possible files
-# @folder_picker.foldername.changed.connect
-# def foldername_callback(new_foldername: pathlib.Path):
-#     print('new folder is : '+str(new_foldername))
-#     new_filenames=['']+[f for f in os.listdir(new_foldername) if f.endswith('.nd')]
-#     folder_picker.filename.choices=new_filenames
-#     
-#     #folder_picker.show()
-# 
-# #when the filename changes, we need to change the experiment numbers
-# @folder_picker.filename.changed.connect
-# def filename_callback(new_filename: str):
-#     print('new filename : '+str(os.path.join(folder_picker.foldername.value,new_filename)))
-#     try:
-#         folder=folder_picker.foldername.value
-#         exp=get_exp(os.path.join(folder,new_filename))
-#         print('new experiment loaded, '+str(exp.nbpos)+' different positions')
-#         folder_picker.expnumber.choices=[-1]+list(map(str,range(1,exp.nbpos+1))) 
-#     except:
-#         print('error: not able to load experiment')
-# 
-# viewer.window.add_dock_widget(folder_picker)
-# =============================================================================
-
-#%%
-# =============================================================================
-# import pathlib 
-# from magicgui import widgets,magicgui
-# 
-# methods=[]
-# 
-# class Container(widgets.Container):
-#     def __init__(self):
-#         self.folder=widgets.FileEdit(mode= "d",value='F:\optorhoa')
-#         self.file=widgets.ComboBox(choices=[''])
-#         self.num_exp=widgets.ComboBox(choices=[''])
-#         self.widgets=[self.folder,self.file,self.num_exp]
-#         self.native.layout().addStretch()
-# 
-# container_exp_choice=Container()
-# folder=container_exp_choice.folder
-# file=container_exp_choice.file
-# num_exp=container_exp_choice.num_exp
-# 
-# # when the folder changes, populate the container with a widget showing the .nd files
-# @folder.changed.connect
-# def list_file(new_folder:pathlib.Path):
-#     #while len(container_exp_choice) > 1:
-#         #container_exp_choice.pop(-1).native.close()
-#     list_file=[f for f in os.listdir(new_folder) if f.endswith('.nd')]
-#     
-#     #container_exp_choice.append(file)
-#             
-#     #this is after, to launch list_exp even if we just changed the folder
-#     if len(list_file)>0:
-#         file.choices=list_file
-# 
-#     #return container_exp_choice
-# 
-#     @file.changed.connect
-#     def list_exp(new_file:str):
-#         #if len(container_exp_choice) > 2:
-#             #container_exp_choice.pop(-1).native.close()
-#         try:
-#             file_path=os.path.join(folder.value,new_file)
-#             print('new filename : '+str(file_path))
-#     
-#             exp=get_exp(file_path)
-#             nbpos=exp.nbpos
-#             num_exp.choices=list(map(str,range(1,nbpos+1)))
-#             container_exp_choice.append(num_exp)
-#         except: 
-#             print('no experiment numbers: problem')
-#             
-#         return container_exp_choice
-#     
-# 
-# @magicgui(call_button='Load experiment')
-# def load_exp():
-#     try:
-#         exp=get_exp(os.path.join(folder.value,file.value))
-#         print('new experiment loading, '+str(exp.nbpos)+' different positions')
-#         viewer.layers.clear()
-#         for i in range(len(exp.wl)):
-#             if exp.stacks:
-#                 stackname=exp.get_stack_name(i,num_exp.value)
-#                 viewer.add_image(imread(stackname),name=exp.wl[i].name)
-#             else:
-#                 files=sorted(glob(exp.get_image_name(i,num_exp.value,'*')),key=alphanumeric_key)
-#                 #print(files)
-#                 stack=read_stack(files)
-#                 viewer.add_image(stack,contrast_limits=[0,2000],name=exp.wl[i].name)
-#                 #set contrast limits automatically
-#                 viewer.layers[-1].reset_contrast_limits()    
-#         viewer.reset_view()
-#         viewer.grid.enabled=True   
-#     except Exception as inst:
-#         print(type(inst))    # the exception instance
-#         print(inst.args)     # arguments stored in .args
-#         print(inst)   
-#         print('error: not able to load experiment')    
-# 
-# container_load_exp=widgets.Container(widgets=[container_exp_choice,load_exp], labels=False)
-# 
-# viewer.window.add_dock_widget(container_load_exp)
-# 
-# 
-# =============================================================================
-
-
-#folder_picker.show()
-
-# =============================================================================
-# import time
-# import warnings
-# from qtpy.QtWidgets import QSpacerItem, QSizePolicy
-# from napari_plugin_engine import napari_hook_implementation
-# from qtpy.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QPushButton, QLabel, QSpinBox, QCheckBox
-# from qtpy.QtWidgets import QTableWidget, QTableWidgetItem, QWidget, QGridLayout, QPushButton, QFileDialog
-# from qtpy.QtCore import Qt
-# from magicgui.widgets import Table
-# from napari._qt.qthreading import thread_worker
-# from qtpy.QtCore import QTimer
-# from magicgui import magicgui
-# import pyqtgraph as pg
-# import numpy as np
-# import napari
-# 
-# 
-# @magicgui(
-#     call_button="Plot t profile",
-# )
-# def plot_t_profile(
-#     data: napari.types.ImageData,
-#     #zones: napari.types.,
-#     thresh_coeff: float = 1.0,
-#     thresh_min_size: int = 60,
-#     rsize_factor: int = 2,
-#     tophat_size: int = 10,
-#     ridge_size: int = 5,
-#     return_all: bool = False,
-# ):
-# 
-#     
-#     return
-# 
-# def extract_voxel_time_series(cpos, nlayer):
-#     """Method to extract the array element values along the first axis of a napari viewer layer.
-#     First the data array is extracted from a napari image layer and the cursor position is
-#     translated into an array index. If the index points to an element inside of the array all values along the first
-#     axis are returned as a list, otherwise None is returned.
-#     :param cpos: Position of the cursor inside of a napari viewer widget.
-#     :type cpos: numpy.ndarray
-#     :param nlayer: Napari image layer to extract data from.
-#     :type nlayer: napari.layers.image.Image
-#     """
-#     # get full data array from layer
-#     data = nlayer.data
-#     # convert cursor position to index
-#     ind = tuple(map(int, np.round(nlayer.world_to_data(cpos))))
-#     # return extracted data if index matches array
-#     if all([0 <= i < max_i for i, max_i in zip(ind, data.shape)]):
-#         return ind, data[(slice(None),) + ind[1:]]
-#     return ind, None
-# 
-# from napari.layers.shapes import Shapes
-# 
-# data = viewer.layers[0].data
-# for layer in viewer.layers:
-#     if isinstance(layer,Shapes):
-#         mask=layer.to_masks((61,1024,1024))[-1]
-#         # convert cursor position to index
-#         #ind = tuple(map(int, np.round(nlayer.world_to_data(cpos))))
-#         toplot=data[mask]
-# =============================================================================
-
-# =============================================================================
-#     @thread_worker
-#     def do_segment():
-#         if data is None:
-#             return [([0, 0], {})]
-# =============================================================================
-
-
-
-
-
-# =============================================================================
-# class PlotTProfile(QWidget):
-#     def __init__(self, napari_viewer):
-#         super().__init__()
-#         self.viewer = napari_viewer
-# 
-#         self.data = None
-#         self.former_line = None
-# 
-#         graph_container = QWidget(self)
-# 
-#         # histogram view
-#         self.graphics_widget = pg.GraphicsLayoutWidget()
-#         self.graphics_widget.setBackground(None)
-# 
-#         #graph_container.setMaximumHeight(100)
-#         graph_container.setLayout(QHBoxLayout())
-#         graph_container.layout().addWidget(self.graphics_widget)
-# 
-#         # individual layers: legend
-#         self.labels = QWidget()
-#         self.labels.setLayout(QVBoxLayout())
-#         self.labels.layout().setSpacing(0)
-# 
-#         # setup layout
-#         self.setLayout(QVBoxLayout())
-# 
-#         self.layout().addWidget(graph_container)
-#         self.layout().addWidget(self.labels)
-# 
-#         num_points_container = QWidget()
-#         num_points_container.setLayout(QHBoxLayout())
-# 
-#         lbl = QLabel("Number of points")
-#         num_points_container.layout().addWidget(lbl)
-#         self.sp_num_points = QSpinBox()
-#         self.sp_num_points.setMinimum(2)
-#         self.sp_num_points.setMaximum(10000000)
-#         self.sp_num_points.setValue(100)
-#         num_points_container.layout().addWidget(self.sp_num_points)
-#         num_points_container.layout().setSpacing(0)
-#         self.layout().addWidget(num_points_container)
-# 
-# 
-#         btn_refresh = QPushButton("Refresh")
-#         btn_refresh.clicked.connect(self.redraw)
-#         self.layout().addWidget(btn_refresh)
-# 
-#         btn_list_values = QPushButton("List values")
-#         btn_list_values.clicked.connect(self._list_values)
-#         self.layout().addWidget(btn_list_values)
-# 
-#         verticalSpacer = QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding)
-#         self.layout().addItem(verticalSpacer)
-# 
-#         self.redraw()
-# 
-#     def _list_values(self):
-#         table = {}
-#         for my_profile in self.data:
-#             positions = np.asarray(my_profile['positions'])
-#             for i, x in enumerate(positions[0]):
-#                 table[my_profile['name'] + '_pos' + str(i)] = positions[:, i]
-# 
-#             table[my_profile['name'] + '_intensity'] = my_profile['intensities']
-#             table[my_profile['name'] + '_distance'] = my_profile['distances']
-# 
-#         # turn table into a widget
-#         dock_widget = table_to_widget(table)
-# 
-#         # add widget to napari
-#         self.viewer.window.add_dock_widget(dock_widget, area='right')
-# 
-#     def _get_current_zone(self):
-#         zone=None
-#         for layer in self.viewer.layers:
-#             if isinstance(layer, napari.layers.Shapes):
-#                 selection = list(layer.selected_data)
-#                 if len(selection) > 0:
-#                     zone = layer.to_masks((1024,1024))[0]
-#                     print(zone)
-#                     break
-#                 try:
-#                     zone = layer.to_masks((1024,1024))[0]
-#                     print(zone)
-#                     break
-#                 except IndexError:
-#                     print('error')
-#                     pass
-#         return zone
-# 
-#     def redraw(self):
-# 
-#         zone = self._get_current_zone()
-# 
-#         if zone is None:
-#             print('no zone found')
-#             return
-# 
-#         self._reset_plot()
-# 
-#         # clean up
-#         layout = self.labels.layout()
-#         for i in reversed(range(layout.count())):
-#             layout.itemAt(i).widget().setParent(None)
-# 
-#         # visualize plots
-#         num_bins = self.sp_num_points.value()
-#         colors = []
-#         self.data = []
-#         print('here i am')
-#         for i, layer in enumerate(self.viewer.selection.active):
-#             print(layer.name)
-#             if isinstance(layer, napari.layers.Image):
-#                 # plot profile
-#                 my_profile = tprofile(layer, zone)
-#                 print('profile calculated ...')
-#                 my_profile['name'] = layer.name
-#                 self.data.append(my_profile)
-#                 colormap = layer.colormap.colors
-#                 color = np.asarray(colormap[-1, 0:3]) * 255
-#                 colors.append(color)
-#     
-#                 intensities = my_profile['intensities']
-#                 if len(intensities) > 0:
-#                     print('before plotting')
-#                     self.p2.plot(np.arange(0,61), intensities, pen=color, name=layer.name)
-#                     print('after plotting')
-#                     text = '[%0.2f .. %0.2f], %0.2f +- %0.2f' % (np.min(intensities),np.max(intensities),np.mean(intensities),np.std(intensities))
-#     
-#                     row = LayerLabelWidget(layer, text, colors[i], self)
-#                     layout.addWidget(row)
-#                 else:
-#                     print('could not get any intensity')
-#             
-#     def _reset_plot(self):
-#         if not hasattr(self, "p2"):
-#             self.p2 = self.graphics_widget.addPlot()
-#             axis = self.p2.getAxis('bottom')
-#             axis.setLabel("Distance")
-#             axis = self.p2.getAxis('left')
-#             axis.setLabel("Intensity")
-#         else:
-#             self.p2.clear()
-# 
-#     def selected_image_layers(self):
-#         return [layer for layer in self.viewer.layers if (isinstance(layer, napari.layers.Image) and layer.visible)]
-# 
-# class LayerLabelWidget(QWidget):
-#     def __init__(self, layer, text, color, gui):
-#         super().__init__()
-# 
-#         self.setLayout(QHBoxLayout())
-# 
-#         lbl = QLabel(layer.name + text)
-#         lbl.setStyleSheet('color: #%02x%02x%02x' % tuple(color.astype(int)))
-#         self.layout().addWidget(lbl)
-# 
-# def tprofile(layer, zone):
-#     intensities=[]
-# 
-#     for i in range(layer.data.shape[0]):
-#         intensities.append(np.mean(layer.data[i][zone]))
-#     return {
-#         'intensities': intensities
-#     }
-# 
-# # copied from napari-skimage-regionprops
-# def table_to_widget(table: dict) -> QWidget:
-#     """
-#     Takes a table given as dictionary with strings as keys and numeric arrays as values and returns a QWidget which
-#     contains a QTableWidget with that data.
-#     """
-#     view = Table(value=table)
-# 
-#     copy_button = QPushButton("Copy to clipboard")
-# 
-#     @copy_button.clicked.connect
-#     def copy_trigger():
-#         view.to_dataframe().to_clipboard()
-# 
-#     save_button = QPushButton("Save as csv...")
-# 
-#     @save_button.clicked.connect
-#     def save_trigger():
-#         filename, _ = QFileDialog.getSaveFileName(save_button, "Save as csv...", ".", "*.csv")
-#         view.to_dataframe().to_csv(filename)
-# 
-#     widget = QWidget()
-#     widget.setWindowTitle("region properties")
-#     widget.setLayout(QGridLayout())
-#     widget.layout().addWidget(copy_button)
-#     widget.layout().addWidget(save_button)
-#     widget.layout().addWidget(view.native)
-# 
-#     return widget
-# 
-# def min_max(data):
-#     return data.min(), data.max()
-# 
-# 
-# =============================================================================
