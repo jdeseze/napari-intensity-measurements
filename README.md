@@ -1,4 +1,4 @@
-# napari
+# napari-intensity-measurements
 
 This project has to be used for the data acquired through the Metamorph software. It is not well documented, but comments will be added. 
 
