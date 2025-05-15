@@ -1,6 +1,6 @@
 # napari-intensity-measurements
 
-This project has to be used for the data acquired through the Metamorph software. It is not well documented, but comments will be added. 
+This project has to be used for the data acquired through the Metamorph software. 
 
 Launching the main 'napari_seg.py' after having installed all the libraries needed, you have different plugins available. 
 
@@ -15,3 +15,5 @@ Fourth is a segmentation for DIC of phase contrast, through optical flow algorit
 Fifth is calculator that calculates intensities in the Shape area (that souldh be a rectangle) chooses, as well as inensity in the whole cell, for the decided wavelenghts. 
 
 For working example, you can download data files, looking for 'Optogenetic control of a GEF of RhoA uncovers a signaling switch from retraction to protrusion' in https://www.ebi.ac.uk/biostudies database. 
+
+I was used for the paper DOI: https://doi.org/10.7554/eLife.93180.4
